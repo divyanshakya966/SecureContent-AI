@@ -1,0 +1,12 @@
+# SecureContent AI — Docling worker (optional)
+# Base worker runs with zero heavy deps; add docling/pyMuPDF only if you need
+# high-fidelity PDF/DOCX/PPTX parsing on Fedora/Windows.
+#
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+python-multipart==0.0.*
+# Optional — uncomment to enable:
+# docling==2.*
+# pymupdf==1.24.*
+# pdfminer.six==20240706
+# python-docx==1.1.*

@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+      - name: Prisma generate
+        run: bunx prisma generate
+        env:
+          DATABASE_URL: file:./prisma/dev.db
+
+      - name: DB push (SQLite)
+        run: bunx prisma db push --accept-data-loss
+        env:
+          DATABASE_URL: file:./prisma/dev.db
+
+      - name: Unit / Integration / Security / Redteam tests
+        run: bunx vitest run --reporter=verbose
+        env:
+          DATABASE_URL: file:./prisma/dev.db
+
+      - name: Benchmark (synthetic)
+        run: bun run benchmark
+        env:
+          DATABASE_URL: file:./prisma/dev.db
+
+      - name: Build
+        run: bun run build
+        env:
+          DATABASE_URL: file:./prisma/dev.db
+          # Z_AI_API_KEY not required — transform falls back to mock offline
+
+      - name: Upload build artifact (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-standalone
+          path: .next/standalone
+          if-no-files-found: ignore

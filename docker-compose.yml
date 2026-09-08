@@ -1,0 +1,59 @@
+# SecureContent AI — Local compose (lightweight, no heavy deps)
+# Runs the Next.js app + optional Docling worker + Caddy reverse-proxy.
+# Usage:
+#   docker compose up --build          # app only
+#   docker compose --profile docling up --build  # with Python docling worker
+
+name: securecontent-ai
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "file:/app/db/custom.db"
+      # Optional:
+      # Z_AI_API_KEY: "${Z_AI_API_KEY:-}"
+      DOCLING_WORKER_URL: "http://docling:8001/parse"
+    volumes:
+      - db_data:/app/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/v1/stats"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Reverse-proxy on :81 mirrors the harness Caddyfile (optional)
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "81:81"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  # Optional Python Docling worker — only started with --profile docling
+  docling:
+    build:
+      context: ./mini-services/docling-worker
+      dockerfile: Dockerfile
+    profiles: ["docling"]
+    ports:
+      - "8001:8001"
+    environment:
+      PYTHONUNBUFFERED: "1"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  db_data:

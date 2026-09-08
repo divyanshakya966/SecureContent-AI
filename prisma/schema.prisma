@@ -1,0 +1,109 @@
+// SecureContent AI — Prisma schema
+// Zero-trust content transformation: documents, findings, transformations, audit, policies.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Document {
+  id             String   @id @default(cuid())
+  filename       String
+  mimeType       String
+  sizeBytes      Int
+  title          String
+  sourceKind     String   @default("UPLOAD") // UPLOAD | SAMPLE | PASTE
+  classification String   @default("UNCLASSIFIED") // PUBLIC | INTERNAL | CONFIDENTIAL | RESTRICTED | UNCLASSIFIED
+  status         String   @default("UPLOADED") // UPLOADED | SCANNED | SANITIZED | TRANSFORMED | BLOCKED
+  riskScore      Int      @default(0)
+  riskBefore     Int      @default(0)
+  riskAfter      Int      @default(0)
+  rawContent     String
+  sanitizedContent String?
+  metadata       String   @default("{}") // JSON string: pages, sections, hashes
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  findings         Finding[]
+  transformations  Transformation[]
+  auditLogs        AuditLog[]
+
+  @@index([status])
+  @@index([classification])
+  @@index([createdAt])
+}
+
+model Finding {
+  id          String   @id @default(cuid())
+  documentId  String
+  category    String   // PII | SECRET | PROMPT_INJECTION | INTERNAL_ASSET | UNSAFE_URL
+  type        String   // EMAIL | PHONE | AADHAAR | PAN | API_KEY | JWT | PRIVATE_KEY | INJECTION_PHRASE ...
+  severity    String   @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  confidence  Float    @default(0.5)
+  action      String   @default("MASK") // ALLOW | MASK | REDACT | REPLACE | QUARANTINE | BLOCK
+  stage       String   @default("INPUT") // INPUT (pre-gen) | OUTPUT (post-gen)
+  location    String   // e.g. "char_offset:120" or "page_3:line_8"
+  matchedText String   // the actual sensitive snippet (kept locally only)
+  maskedText  String   // masked/redacted representation
+  reason      String   @default("")
+  createdAt   DateTime @default(now())
+
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([category])
+  @@index([severity])
+}
+
+model Transformation {
+  id            String   @id @default(cuid())
+  documentId    String
+  profile       String   // PUBLIC_RELEASE | INTERNAL_SUMMARY | EXECUTIVE_BRIEF | HR_SAFE | SECURITY_INCIDENT
+  outputType    String   // EXECUTIVE_SUMMARY | FAQ | TECHNICAL_REPORT | SLIDE_OUTLINE | EMAIL_DRAFT
+  model         String   @default("zai-glm")
+  outputContent String?
+  grounding     String   @default("PENDING") // PASS | FAIL | PENDING | SKIPPED
+  policyStatus  String   @default("PENDING") // PASS | FAIL | PENDING
+  outputDlp     String   @default("PENDING") // PASS | FAIL | PENDING
+  riskDelta     Int      @default(0)
+  leakageCount  Int      @default(0)
+  citations     String   @default("[]") // JSON array of {claim, evidence, grounded}
+  createdAt     DateTime @default(now())
+
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  documentId  String?
+  actor       String   @default("system") // system | analyst | policy_engine | llm_adapter | output_validator
+  action      String   // UPLOAD | SCAN | SANITIZE | TRANSFORM | DLP_BLOCK | POLICY_APPLY | RELEASE
+  detail      String   @default("")
+  timestamp   DateTime @default(now())
+
+  document    Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([documentId])
+  @@index([timestamp])
+}
+
+model Policy {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  description    String   @default("")
+  classification String   @default("INTERNAL")
+  allow          String   @default("[]")  // JSON array of strings
+  mask           String   @default("[]")  // JSON array of finding types
+  remove         String   @default("[]")  // JSON array of finding types
+  block          String   @default("[]")  // JSON array of finding types
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}

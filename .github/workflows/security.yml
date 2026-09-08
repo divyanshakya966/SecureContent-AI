@@ -1,0 +1,56 @@
+name: Security
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # weekly Monday 06:00 UTC
+
+jobs:
+  secrets-and-deps:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Audit (bun)
+        run: bun audit || true
+
+      - name: Gitleaks — secret scan (no secrets should be in repo)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Semgrep — SAST (OWASP + JS/TS rules)
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/owasp-top-ten
+            p/javascript
+            p/typescript
+            p/secrets
+
+      - name: Prisma validate
+        run: bunx prisma validate
+
+      - name: ESLint security rules (already in eslint config)
+        run: bun run lint
+
+  docker:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image (smoke test)
+        run: docker build -t securecontent-ai:test .

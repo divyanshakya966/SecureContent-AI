@@ -1,0 +1,14 @@
+{
+  "name": "SecureContent AI — Synthetic Benchmark",
+  "version": "0.1.0",
+  "note": "All content is synthetic. No real PII or credentials. Ground-truth labels are derived from the generator — measure against scanContent().",
+  "counts": {
+    "clean": 5,
+    "pii_heavy": 3,
+    "secret_heavy": 3,
+    "injection": 4,
+    "mixed": 2
+  },
+  "methodology": "For each synthetic document: 1) run scanContent(), 2) compare findings vs labeled spans, 3) compute precision/recall per category, 4) sanitize with the declared profile, 5) run output DLP on sanitized text and check leakage=0, 6) record risk_before/after.",
+  "samples_reference": "See src/lib/security/samples.ts and datasets/*/*.txt — these 5 canonical samples are the attack-driven demo. Extend with your own synthetic docs for measured benchmarking."
+}

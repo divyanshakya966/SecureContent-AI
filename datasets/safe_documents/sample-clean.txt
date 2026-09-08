@@ -1,0 +1,22 @@
+Q3 Product Strategy Memo
+
+Overview
+The product team will focus on three priorities for Q3: improving onboarding
+completion, expanding the integration catalog, and hardening platform reliability.
+
+Onboarding
+We observed a drop in onboarding completion at the third step. The growth team
+will run a series of experiments to reduce friction and add contextual guidance.
+
+Integrations
+The catalog will grow to support additional workflow tools. Each integration
+will ship with a documented data-flow diagram and a maintenance owner.
+
+Reliability
+The platform team will introduce automated recovery for the most common failure
+modes and publish a monthly uptime summary.
+
+Target outcomes
+- Higher onboarding completion
+- Broader integration coverage
+- Improved reliability posture
