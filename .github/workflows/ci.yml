@@ -24,17 +24,16 @@ jobs:
       - name: Install deps
         run: bun install --frozen-lockfile || bun install
 
-      - name: Lint
-        run: bun run lint
-        continue-on-error: false
-
-      - name: Typecheck
-        run: bunx tsc --noEmit
-
       - name: Prisma generate
         run: bunx prisma generate
         env:
           DATABASE_URL: file:./prisma/dev.db
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
 
       - name: DB push (SQLite)
         run: bunx prisma db push --accept-data-loss

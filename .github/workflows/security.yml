@@ -47,6 +47,8 @@ jobs:
 
       - name: Prisma validate
         run: bunx prisma validate
+        env:
+          DATABASE_URL: file:./prisma/dev.db
 
       - name: ESLint security rules (already in eslint config)
         run: bun run lint
