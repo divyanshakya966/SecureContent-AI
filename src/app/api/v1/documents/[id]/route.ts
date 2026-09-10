@@ -5,15 +5,18 @@ import { serializeDocument, logAudit } from "@/lib/api/helpers";
 export const runtime = "nodejs";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  // T1 validation: id is cuid-ish (basic sanity)
+  if (!id || id.length < 10) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   const doc = await db.document.findUnique({
     where: { id },
     include: {
       findings: { orderBy: { createdAt: "asc" } },
       transformations: { orderBy: { createdAt: "desc" } },
+      intelligence: true,
     },
   });
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });

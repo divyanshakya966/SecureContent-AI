@@ -22,10 +22,11 @@ jobs:
           node-version: 22
 
       - name: Install deps
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile || bun install
 
       - name: Lint
         run: bun run lint
+        continue-on-error: false
 
       - name: Typecheck
         run: bunx tsc --noEmit

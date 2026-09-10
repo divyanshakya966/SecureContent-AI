@@ -6,11 +6,13 @@ import { useApp, type ViewKey } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 
 const TITLES: Record<ViewKey, { title: string; subtitle: string }> = {
-  dashboard: { title: "Operations Console", subtitle: "Security posture across all ingested content" },
+  dashboard: { title: "Operations Console", subtitle: "Secure Intelligence · Policy-aware, intelligence-aware, zero-trust" },
   upload: { title: "Ingest Content", subtitle: "Upload documents, paste text, or load an attack sample" },
-  documents: { title: "Documents", subtitle: "Every ingested source, its risk score and validation status" },
-  document: { title: "Document Analysis", subtitle: "Findings, sanitization, transformation and release gate" },
-  policies: { title: "Transformation Policies", subtitle: "What each generated output is allowed to contain" },
+  documents: { title: "Documents", subtitle: "Every ingested source, its risk score and intelligence" },
+  document: { title: "Document Analysis", subtitle: "Findings, intelligence, sanitization, transformation & release gate" },
+  intelligence: { title: "Intelligence", subtitle: "Entities, IOCs, TTPs (MITRE ATT&CK), risks, key findings & evidence" },
+  "policy-compare": { title: "Policy Compare", subtitle: "Same source, different audiences — compare sanitized outputs" },
+  policies: { title: "Transformation Policies", subtitle: "Audience-specific allow / mask / remove / block buckets" },
   audit: { title: "Audit Trail", subtitle: "Every security decision, timestamped and attributable" },
   architecture: { title: "Architecture & Threat Model", subtitle: "How the zero-trust pipeline is structured" },
 };
@@ -26,7 +28,9 @@ export function Topbar() {
         <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-muted-foreground">
           <span className="font-mono text-primary">SIH26154</span>
           <span className="text-border">/</span>
-          <span>SecureContent AI</span>
+          <span>Secure Intelligence</span>
+          <span className="hidden sm:inline text-border">/</span>
+          <span className="hidden sm:inline">Policy-Aware · Intelligence-Aware · Zero-Trust</span>
         </div>
         <h1 className="truncate text-base font-semibold tracking-tight md:text-lg">{meta.title}</h1>
         <p className="truncate text-xs text-muted-foreground">{meta.subtitle}</p>

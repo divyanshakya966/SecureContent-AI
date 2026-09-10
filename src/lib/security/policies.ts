@@ -7,8 +7,9 @@ export const DEFAULT_POLICIES: Omit<PolicyRule, "id" | "createdAt" | "updatedAt"
   {
     name: "PUBLIC_RELEASE",
     description:
-      "Strictest profile. Output is intended for unrestricted public distribution. All PII, secrets, internal assets, and prompt injection are removed or redacted.",
+      "Strictest profile. Public audience: high-level facts and public contacts only. All PII, secrets, internal assets, and prompt injection are removed or redacted.",
     classification: "PUBLIC",
+    audience: "PUBLIC",
     allow: ["high_level_facts", "aggregate_statistics", "public_contact_information"],
     mask: ["PERSON_NAME", "EMAIL", "PHONE", "ORG_ID", "IP_ADDRESS", "DATE_OF_BIRTH"],
     remove: ["AADHAAR", "PAN", "CREDIT_CARD", "INTERNAL_URL", "INTERNAL_PROJECT"],
@@ -18,8 +19,9 @@ export const DEFAULT_POLICIES: Omit<PolicyRule, "id" | "createdAt" | "updatedAt"
   {
     name: "INTERNAL_SUMMARY",
     description:
-      "Output for internal teams. PII is masked, secrets are removed, prompt injection is quarantined. Internal identifiers may be retained in aggregate form.",
+      "Internal teams: aggregate detail is acceptable, but individuals must not be identifiable and no credentials may appear. Preserves internal project names.",
     classification: "INTERNAL",
+    audience: "INTERNAL",
     allow: ["high_level_facts", "aggregate_statistics", "internal_project_names"],
     mask: ["PERSON_NAME", "EMAIL", "PHONE", "DATE_OF_BIRTH"],
     remove: ["AADHAAR", "PAN", "CREDIT_CARD", "API_KEY", "JWT", "PRIVATE_KEY", "DB_CONN_STRING", "PASSWORD", "INJECTION_PHRASE", "ROLE_MANIPULATION", "HIDDEN_INSTRUCTION", "TOOL_INVOCATION"],
@@ -29,8 +31,9 @@ export const DEFAULT_POLICIES: Omit<PolicyRule, "id" | "createdAt" | "updatedAt"
   {
     name: "EXECUTIVE_BRIEF",
     description:
-      "Concise brief for leadership. Removes operational secrets, redacts government IDs, masks contact details, preserves strategic context.",
+      "Executives: concise, strategic. Operational secrets omitted; strategic context preserved. Audience: leadership.",
     classification: "CONFIDENTIAL",
+    audience: "EXECUTIVE",
     allow: ["high_level_facts", "aggregate_statistics", "strategic_context"],
     mask: ["PERSON_NAME", "EMAIL", "PHONE", "IP_ADDRESS", "ORG_ID"],
     remove: ["AADHAAR", "PAN", "CREDIT_CARD", "API_KEY", "JWT", "PRIVATE_KEY", "DB_CONN_STRING", "PASSWORD", "INTERNAL_URL"],
@@ -40,8 +43,9 @@ export const DEFAULT_POLICIES: Omit<PolicyRule, "id" | "createdAt" | "updatedAt"
   {
     name: "HR_SAFE",
     description:
-      "HR-safe summary. Strong PII minimization — names, contact details, IDs, and dates of birth are masked or removed.",
+      "HR audience: strong PII minimization — names, contact details, IDs, and dates of birth are masked or removed. Roles preserved, not names.",
     classification: "CONFIDENTIAL",
+    audience: "HR",
     allow: ["aggregate_statistics", "role_descriptions"],
     mask: ["PERSON_NAME", "EMAIL", "PHONE", "ORG_ID"],
     remove: ["AADHAAR", "PAN", "CREDIT_CARD", "DATE_OF_BIRTH", "IP_ADDRESS", "INTERNAL_URL", "API_KEY", "JWT", "PRIVATE_KEY", "DB_CONN_STRING", "PASSWORD"],
@@ -51,9 +55,10 @@ export const DEFAULT_POLICIES: Omit<PolicyRule, "id" | "createdAt" | "updatedAt"
   {
     name: "SECURITY_INCIDENT",
     description:
-      "Incident postmortem transformation. Operational secrets and credentials are removed; infrastructure identifiers are abstracted; injection attempts are quarantined.",
+      "Security responders: timeline, root cause, IOCs, TTPs preserved; credentials abstracted; injections quarantined. Audience: SOC/incident team.",
     classification: "RESTRICTED",
-    allow: ["timeline_facts", "root_cause_summary", "follow_up_actions"],
+    audience: "SECURITY",
+    allow: ["timeline_facts", "root_cause_summary", "follow_up_actions", "iocs", "ttps", "evidence"],
     mask: ["PERSON_NAME", "EMAIL", "PHONE", "IP_ADDRESS", "ORG_ID"],
     remove: ["API_KEY", "JWT", "PRIVATE_KEY", "DB_CONN_STRING", "PASSWORD", "CLOUD_CRED", "INTERNAL_URL", "INTERNAL_PROJECT"],
     block: ["INJECTION_PHRASE", "ROLE_MANIPULATION", "HIDDEN_INSTRUCTION", "TOOL_INVOCATION", "AADHAAR", "PAN", "CREDIT_CARD"],

@@ -8,6 +8,8 @@ export type ViewKey =
   | "documents"
   | "document"
   | "policies"
+  | "intelligence"
+  | "policy-compare"
   | "audit"
   | "architecture";
 

@@ -9,6 +9,7 @@ import type {
   PolicyRule,
   DocumentMeta,
   Citation,
+  IntelligenceReport,
 } from "@/types";
 import { DEFAULT_POLICIES } from "@/lib/security/policies";
 
@@ -54,6 +55,35 @@ export function serializeTransformation(t: any): TransformationRecord {
   };
 }
 
+export function serializeIntelligence(r: any): IntelligenceReport {
+  const safe = (v: unknown) => {
+    if (typeof v !== "string") return [];
+    try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; }
+  };
+  return {
+    id: r.id,
+    documentId: r.documentId,
+    entities: safe(r.entities),
+    iocs: safe(r.iocs),
+    ttps: safe(r.ttps),
+    risks: safe(r.risks),
+    keyFindings: safe(r.keyFindings),
+    evidence: safe(r.evidence),
+    summary: r.summary ?? "",
+    riskScore: r.riskScore ?? 0,
+    classification: r.classification ?? "UNCLASSIFIED",
+    model: r.model ?? "heuristic-v1",
+    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+    counts: {
+      entities: safe(r.entities).length,
+      iocs: safe(r.iocs).length,
+      ttps: safe(r.ttps).length,
+      risks: safe(r.risks).length,
+      keyFindings: safe(r.keyFindings).length,
+    },
+  };
+}
+
 export function serializeDocument(d: any): DocumentRecord {
   let meta: DocumentMeta = {};
   try {
@@ -80,6 +110,7 @@ export function serializeDocument(d: any): DocumentRecord {
     updatedAt: d.updatedAt instanceof Date ? d.updatedAt.toISOString() : String(d.updatedAt),
     findings: d.findings?.map(serializeFinding),
     transformations: d.transformations?.map(serializeTransformation),
+    intelligence: d.intelligence ? serializeIntelligence(d.intelligence) : null,
   };
 }
 
@@ -89,6 +120,7 @@ export function serializePolicy(p: any): PolicyRule {
     name: p.name,
     description: p.description,
     classification: p.classification,
+    audience: p.audience ?? p.classification ?? "INTERNAL",
     allow: safeParseArr(p.allow),
     mask: safeParseArr(p.mask),
     remove: safeParseArr(p.remove),
@@ -147,12 +179,22 @@ export async function logAudit(opts: {
 
 export async function ensureDefaultPolicies(): Promise<void> {
   const count = await db.policy.count();
-  if (count > 0) return;
+  if (count > 0) {
+    // Backfill audience for older DBs
+    for (const p of DEFAULT_POLICIES) {
+      const existing = await db.policy.findUnique({ where: { name: p.name } });
+      if (existing && !(existing as any).audience) {
+        await db.policy.update({ where: { name: p.name }, data: { audience: (p as any).audience ?? p.classification } });
+      }
+    }
+    return;
+  }
   await db.policy.createMany({
     data: DEFAULT_POLICIES.map((p) => ({
       name: p.name,
       description: p.description,
       classification: p.classification,
+      audience: (p as any).audience ?? p.classification,
       allow: stringifyArr(p.allow),
       mask: stringifyArr(p.mask),
       remove: stringifyArr(p.remove),

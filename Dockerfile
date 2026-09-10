@@ -22,11 +22,16 @@ ENV DATABASE_URL="file:./prisma/dev.db"
 RUN bun run build
 
 # ---- runner ----
-FROM base AS runner
+FROM node:22-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
+
+# Install bun for prisma CLI in runner (lightweight) + wget for healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends wget ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && npm i -g bun
 
 # Only production artifacts
 COPY --from=builder /app/.next/standalone ./
@@ -35,15 +40,17 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 
 # Helper scripts for DB preflight (optional)
 COPY --from=builder /app/.zscripts ./.zscripts
 COPY --from=builder /app/package.json ./package.json
 
 # Create writable locations for SQLite
-RUN mkdir -p /app/db /app/prisma && chown -R bun:bun /app/db /app/prisma 2>/dev/null || true
+RUN mkdir -p /app/db /app/prisma
 
 EXPOSE 3000
 
-# Preflight: ensure DB exists and push schema, then start
-CMD ["sh", "-c", "mkdir -p /app/db /app/prisma && DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} bunx prisma db push --accept-data-loss 2>/dev/null || true; DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} bun --bun run .next/standalone/server.js"]
+# Preflight: ensure DB exists and push schema, then start Node server
+CMD ["sh", "-c", "mkdir -p /app/db /app/prisma && DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} bunx prisma db push --accept-data-loss 2>/dev/null || true; DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} node .next/standalone/server.js"]

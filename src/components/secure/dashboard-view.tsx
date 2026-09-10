@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
-  FileStack, ShieldAlert, KeyRound, CheckCircle2, Activity, ArrowDownRight, Loader2,
+  FileStack, ShieldAlert, KeyRound, CheckCircle2, Activity, ArrowDownRight, Loader2, Brain, Globe, Crosshair,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import type { DashboardStats } from "@/types";
@@ -123,6 +123,18 @@ export function DashboardView() {
           hint={`${stats.piiDetected} PII findings detected`}
           tone="success"
         />
+      </div>
+
+      {/* Intelligence stats — signature innovation #2 */}
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        <StatCard icon={Brain} label="Intelligence reports" value={stats.totalIntelligenceReports ?? 0} hint={`${stats.totalEntities ?? 0} entities extracted`} />
+        <StatCard icon={Globe} label="IOCs" value={stats.totalIOCs ?? 0} hint={`${stats.totalEntities ?? 0} entities · ${stats.totalTTPs ?? 0} TTPs`} />
+        <StatCard icon={Crosshair} label="TTPs" value={stats.totalTTPs ?? 0} hint="MITRE ATT&CK techniques" />
+        <Card className="relative overflow-hidden p-4 border-primary/20 bg-primary/5">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Platform</div>
+          <div className="mt-1 text-sm font-semibold leading-tight">Policy-Aware · Intelligence-Aware · Zero-Trust</div>
+          <div className="mt-1 text-xs text-muted-foreground">Three signature innovations</div>
+        </Card>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">

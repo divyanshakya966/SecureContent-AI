@@ -75,6 +75,7 @@ export interface DocumentRecord {
   updatedAt: string;
   findings?: Finding[];
   transformations?: TransformationRecord[];
+  intelligence?: IntelligenceReport | null;
 }
 
 export interface DocumentMeta {
@@ -84,6 +85,9 @@ export interface DocumentMeta {
   wordCount?: number;
   sha256?: string;
   sourceFormat?: string;
+  warnings?: string[];
+  parser?: string;
+  intelligenceVersion?: string;
 }
 
 export type TransformationProfile =
@@ -138,6 +142,8 @@ export interface PolicyRule {
   name: string;
   description: string;
   classification: Classification;
+  /** Human audience this policy is tailored for — distinct from classification. */
+  audience?: string;
   allow: string[];
   mask: string[];
   remove: string[];
@@ -145,6 +151,119 @@ export interface PolicyRule {
   active: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Policy-Aware Transformation (signature innovation #1)
+// ---------------------------------------------------------------------------
+
+export type AudienceKey = "PUBLIC" | "INTERNAL" | "EXECUTIVE" | "HR" | "SECURITY" | "CUSTOM";
+
+export interface PolicyCompareItem {
+  profile: TransformationProfile;
+  audience: string;
+  sanitizedPreview: string;
+  sanitizedContent: string;
+  findingsRedacted: number;
+  riskBefore: number;
+  riskAfter: number;
+  blocked: boolean;
+  blockReason?: string;
+  transformation?: TransformationRecord;
+}
+
+export interface PolicyCompareResult {
+  documentId: string;
+  outputType: OutputType;
+  items: PolicyCompareItem[];
+  generatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Intelligence-Aware Extraction (signature innovation #2)
+// ---------------------------------------------------------------------------
+
+export type EntityType = "PERSON" | "ORG" | "LOCATION" | "EMAIL" | "PHONE" | "DATE" | "IP" | "URL" | "ID" | "MISC";
+export type IOCType = "IP" | "DOMAIN" | "URL" | "HASH_MD5" | "HASH_SHA1" | "HASH_SHA256" | "CVE" | "EMAIL" | "PHONE";
+export type TacticType = "Reconnaissance" | "Resource Development" | "Initial Access" | "Execution" | "Persistence" | "Privilege Escalation" | "Defense Evasion" | "Credential Access" | "Discovery" | "Lateral Movement" | "Collection" | "Exfiltration" | "Command and Control" | "Impact";
+
+export interface ExtractedEntity {
+  type: EntityType;
+  value: string;
+  location: string;
+  confidence: number;
+  context?: string;
+}
+
+export interface IOC {
+  type: IOCType;
+  value: string;
+  location: string;
+  severity: Severity;
+  confidence: number;
+  context?: string;
+}
+
+export interface TTP {
+  technique: string;
+  tactic: TacticType;
+  mitreId: string; // e.g. T1566, T1003
+  confidence: number;
+  evidence: string;
+  location: string;
+}
+
+export interface IntelRisk {
+  category: string;
+  severity: Severity;
+  description: string;
+  score: number;
+  evidence?: string;
+}
+
+export interface KeyFinding {
+  finding: string;
+  evidence: string;
+  location: string;
+  confidence: number;
+  grounded: boolean;
+}
+
+export interface IntelligenceReport {
+  id: string;
+  documentId: string;
+  entities: ExtractedEntity[];
+  iocs: IOC[];
+  ttps: TTP[];
+  risks: IntelRisk[];
+  keyFindings: KeyFinding[];
+  evidence: { claim: string; source: string; location: string }[];
+  summary: string;
+  riskScore: number;
+  classification: Classification;
+  model: string;
+  createdAt: string;
+  // counts for dashboard
+  counts: {
+    entities: number;
+    iocs: number;
+    ttps: number;
+    risks: number;
+    keyFindings: number;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Zero-Trust Pipeline (signature innovation #3) — validation types
+// ---------------------------------------------------------------------------
+
+export type TrustBoundary = "T1_BROWSER_BACKEND" | "T2_BACKEND_PARSER" | "T3_SANITIZED_LLM" | "T4_RAG_LLM" | "T5_LLM_VALIDATOR" | "T6_BACKEND_STORAGE" | "T7_BACKEND_PROVIDER";
+
+export interface ZeroTrustGate {
+  boundary: TrustBoundary;
+  status: ValidationStatus;
+  checks: { name: string; passed: boolean; detail: string }[];
+  timestamp: string;
 }
 
 export interface SecurityReport {
@@ -187,6 +306,11 @@ export interface DashboardStats {
   documentsByClassification: { classification: string; count: number }[];
   riskTrend: { label: string; title: string; before: number; after: number }[];
   recentActivity: AuditLogEntry[];
+  // Intelligence stats (signature innovation #2)
+  totalIntelligenceReports?: number;
+  totalEntities?: number;
+  totalIOCs?: number;
+  totalTTPs?: number;
 }
 
 export interface DetectionResult {

@@ -11,6 +11,8 @@ import type {
   Finding,
   TransformationProfile,
   OutputType,
+  IntelligenceReport,
+  PolicyCompareResult,
 } from "@/types";
 
 async function json<T>(res: Response): Promise<T> {
@@ -119,5 +121,29 @@ export const api = {
   async getSamples(): Promise<SampleDocument[]> {
     const r = await fetch("/api/v1/samples", { cache: "no-store" });
     return (await json<{ samples: SampleDocument[] }>(r)).samples;
+  },
+
+  async getIntelligence(id: string): Promise<IntelligenceReport> {
+    const r = await fetch(`/api/v1/documents/${id}/intelligence`, { cache: "no-store" });
+    return (await json<{ intelligence: IntelligenceReport }>(r)).intelligence;
+  },
+
+  async refreshIntelligence(id: string): Promise<IntelligenceReport> {
+    const r = await fetch(`/api/v1/documents/${id}/intelligence`, { method: "POST" });
+    return (await json<{ intelligence: IntelligenceReport }>(r)).intelligence;
+  },
+
+  async policyCompare(id: string, profiles: TransformationProfile[], outputType: OutputType = "EXECUTIVE_SUMMARY"): Promise<PolicyCompareResult> {
+    const r = await fetch(`/api/v1/documents/${id}/policy-compare`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profiles, outputType }),
+    });
+    return json<PolicyCompareResult>(r);
+  },
+
+  async seed(): Promise<{ seeded: { title: string; status: string; risk: number }[] }> {
+    const r = await fetch("/api/v1/seed", { method: "POST" });
+    return json<{ seeded: { title: string; status: string; risk: number }[] }>(r);
   },
 };

@@ -13,3 +13,7 @@ export { DEFAULT_POLICIES, findPolicy, POLICY_LABELS, OUTPUT_LABELS } from "./po
 export { SAMPLE_DOCUMENTS } from "./samples";
 export { transformContent } from "@/lib/ai/transform";
 export type { TransformResult } from "@/lib/ai/transform";
+export { sanitizeOutputHtml } from "./outputSanitizer";
+export type { OutputSanitizeResult } from "./outputSanitizer";
+export { buildIntelligenceReport } from "@/lib/intelligence/extractor";
+export { ensureIntelligence, getIntelligence } from "@/lib/intelligence/service";

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { logAudit } from "@/lib/api/helpers";
 import { scanContent, sanitizeContent, computeRisk, transformContent, runOutputDlp, SAMPLE_DOCUMENTS } from "@/lib/security";
+import { buildIntelligenceReport } from "@/lib/intelligence/extractor";
 import { getPolicyByName } from "@/lib/api/helpers";
 import type { RawFinding } from "@/lib/security";
 import type { TransformationProfile, OutputType } from "@/types";
@@ -68,6 +69,38 @@ export async function POST() {
       action: "UPLOAD",
       detail: `Seeded sample "${sample.title}" (${sample.category}). Risk ${risk.total}/100, ${rawFindings.length} findings.`,
     });
+
+    // Intelligence-Aware Extraction (signature innovation #2) — run immediately after scan
+    try {
+      const intel = buildIntelligenceReport({
+        documentId: doc.id,
+        rawContent: sample.content,
+        findings: rawFindings,
+        classification: risk.classification as any,
+        riskScore: risk.total,
+      });
+      await db.intelligenceReport.create({
+        data: {
+          documentId: doc.id,
+          entities: JSON.stringify(intel.entities),
+          iocs: JSON.stringify(intel.iocs),
+          ttps: JSON.stringify(intel.ttps),
+          risks: JSON.stringify(intel.risks),
+          keyFindings: JSON.stringify(intel.keyFindings),
+          evidence: JSON.stringify(intel.evidence),
+          summary: intel.summary,
+          riskScore: intel.riskScore,
+          classification: intel.classification,
+          model: intel.model,
+        },
+      });
+      await logAudit({
+        documentId: doc.id,
+        actor: "intelligence_engine",
+        action: "INTELLIGENCE_EXTRACT",
+        detail: `Intelligence: ${intel.entities.length} entities, ${intel.iocs.length} IOCs, ${intel.ttps.length} TTPs.`,
+      });
+    } catch {}
 
     // Choose a profile + output type that best demonstrate the pipeline.
     const profile: TransformationProfile = sample.category === "INJECTION" || sample.category === "MIXED"

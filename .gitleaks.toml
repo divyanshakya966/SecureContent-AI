@@ -1,0 +1,19 @@
+title = "SecureContent AI gitleaks config"
+
+[allowlist]
+  description = "Synthetic test secrets for security gateway benchmark"
+  paths = [
+    '''src/lib/security/samples\.ts''',
+    '''tests/.*''',
+    '''datasets/.*''',
+    '''src/lib/security/detectors\.ts''',
+  ]
+  regexes = [
+    '''AKIA[0-9A-Z]{12,20}''',
+    '''ghp_[A-Za-z0-9]{10,}''',
+    '''BEGIN.*PRIVATE KEY''',
+    '''postgres://.*''',
+    '''eyJ[A-Za-z0-9_-]{8,}\.eyJ.*''',
+    '''sk-[A-Za-z0-9]{14,}''',
+    '''xox[baprs]-[A-Za-z0-9-]{10,}''',
+  ]

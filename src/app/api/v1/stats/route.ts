@@ -27,6 +27,8 @@ export async function GET() {
     auditRecent,
     docsForTrend,
     classAgg,
+    intelReports,
+    intelAgg,
   ] = await Promise.all([
     db.document.count(),
     db.document.count({ where: { status: "SCANNED" } }),
@@ -46,6 +48,8 @@ export async function GET() {
       select: { title: true, riskBefore: true, riskAfter: true, createdAt: true },
     }),
     db.document.groupBy({ by: ["classification"], _count: true }),
+    db.intelligenceReport.findMany({ select: { entities: true, iocs: true, ttps: true } }),
+    db.intelligenceReport.count(),
   ]);
 
   const totalFindings = findingsAgg.reduce((a, b) => a + b._count, 0);
@@ -88,6 +92,16 @@ export async function GET() {
       after: d.riskAfter,
     }));
 
+  // Intelligence aggregates
+  let totalEntities = 0;
+  let totalIOCs = 0;
+  let totalTTPs = 0;
+  for (const r of intelReports) {
+    try { totalEntities += JSON.parse(r.entities as any)?.length ?? 0; } catch {}
+    try { totalIOCs += JSON.parse(r.iocs as any)?.length ?? 0; } catch {}
+    try { totalTTPs += JSON.parse(r.ttps as any)?.length ?? 0; } catch {}
+  }
+
   const stats: DashboardStats = {
     totalDocuments,
     scannedDocuments,
@@ -105,6 +119,10 @@ export async function GET() {
     documentsByClassification,
     riskTrend,
     recentActivity: auditRecent.map(serializeAudit),
+    totalIntelligenceReports: intelAgg,
+    totalEntities,
+    totalIOCs,
+    totalTTPs,
   };
 
   return NextResponse.json({ stats });

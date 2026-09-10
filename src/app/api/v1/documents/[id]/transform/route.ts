@@ -6,7 +6,9 @@ import {
   getPolicyByName,
   serializeTransformation,
 } from "@/lib/api/helpers";
-import { transformContent, runOutputDlp, scanContent, computeRisk } from "@/lib/security";
+import { transformContent, runOutputDlp, scanContent, computeRisk, sanitizeOutputHtml } from "@/lib/security";
+import { TransformSchema, parseOr400 } from "@/lib/validation/schemas";
+import { checkRateLimit, rateLimitKey } from "@/lib/validation/rateLimit";
 import type { OutputType, TransformationProfile } from "@/types";
 
 export const runtime = "nodejs";
@@ -18,9 +20,13 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const rl = checkRateLimit(rateLimitKey(req, `POST /transform:${id}`), { max: 10, windowMs: 60_000 });
+  if (!rl.allowed) return NextResponse.json({ error: "Rate limited" }, { status: 429 });
+
   const body = await req.json().catch(() => ({} as any));
-  const profile = (body.profile || "PUBLIC_RELEASE") as TransformationProfile;
-  const outputType = (body.outputType || "EXECUTIVE_SUMMARY") as OutputType;
+  const parsed = parseOr400(TransformSchema, body);
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  const { profile, outputType } = parsed.data as { profile: TransformationProfile; outputType: OutputType };
 
   const doc = await db.document.findUnique({ where: { id } });
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -59,14 +65,24 @@ export async function POST(
     grounding = citations.some((c) => !c.grounded) ? "FAIL" : "PASS";
     if (citations.length === 0) grounding = "SKIPPED";
 
+    // T5: Output sanitization — treat LLM output as untrusted (strip unsafe HTML/Markdown)
+    const htmlSan = sanitizeOutputHtml(outputContent);
+    if (htmlSan.removed.length) {
+      outputContent = htmlSan.sanitized;
+      dlpReasons.push(...htmlSan.warnings);
+    }
+
     // Output DLP — the deterministic release gate.
     const dlp = runOutputDlp(outputContent, policy);
     outputDlp = dlp.passed ? "PASS" : "FAIL";
     leakageCount = dlp.leakageFindings.length;
-    dlpReasons = dlp.reasons;
+    dlpReasons.push(...dlp.reasons);
     if (!dlp.passed) {
       outputContent = dlp.repairedContent;
     }
+    // Re-sanitize after DLP repair in case repair introduced placeholders
+    const finalSan = sanitizeOutputHtml(outputContent);
+    if (finalSan.removed.length) outputContent = finalSan.sanitized;
   } catch (e: any) {
     console.error("[transform]", e);
     return NextResponse.json(
@@ -126,7 +142,7 @@ export async function POST(
 
   const updated = await db.document.findUnique({
     where: { id },
-    include: { findings: { orderBy: { createdAt: "asc" } }, transformations: { orderBy: { createdAt: "desc" } } },
+    include: { findings: { orderBy: { createdAt: "asc" } }, transformations: { orderBy: { createdAt: "desc" } }, intelligence: true },
   });
 
   return NextResponse.json({

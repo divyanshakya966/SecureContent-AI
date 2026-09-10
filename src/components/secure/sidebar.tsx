@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldCheck, LayoutDashboard, UploadCloud, FileStack, ScrollText, BookLock, Network, Github } from "lucide-react";
+import { ShieldCheck, LayoutDashboard, UploadCloud, FileStack, ScrollText, BookLock, Network, Github, Brain, Scale } from "lucide-react";
 import { useApp, type ViewKey } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +8,8 @@ const NAV: { key: ViewKey; label: string; icon: React.ComponentType<{ className?
   { key: "dashboard", label: "Operations", icon: LayoutDashboard },
   { key: "upload", label: "Ingest Content", icon: UploadCloud },
   { key: "documents", label: "Documents", icon: FileStack },
+  { key: "intelligence", label: "Intelligence", icon: Brain },
+  { key: "policy-compare", label: "Policy Compare", icon: Scale },
   { key: "policies", label: "Policies", icon: ScrollText },
   { key: "audit", label: "Audit Trail", icon: BookLock },
   { key: "architecture", label: "Architecture", icon: Network },

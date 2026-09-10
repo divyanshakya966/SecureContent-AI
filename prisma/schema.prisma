@@ -31,6 +31,7 @@ model Document {
   findings         Finding[]
   transformations  Transformation[]
   auditLogs        AuditLog[]
+  intelligence     IntelligenceReport?
 
   @@index([status])
   @@index([classification])
@@ -99,6 +100,7 @@ model Policy {
   name           String   @unique
   description    String   @default("")
   classification String   @default("INTERNAL")
+  audience       String   @default("INTERNAL") // PUBLIC | INTERNAL | EXECUTIVE | HR | SECURITY | CUSTOM
   allow          String   @default("[]")  // JSON array of strings
   mask           String   @default("[]")  // JSON array of finding types
   remove         String   @default("[]")  // JSON array of finding types
@@ -106,4 +108,24 @@ model Policy {
   active         Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+}
+
+model IntelligenceReport {
+  id             String   @id @default(cuid())
+  documentId     String   @unique
+  document       Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  entities       String   @default("[]") // JSON: ExtractedEntity[]
+  iocs           String   @default("[]") // JSON: IOC[]
+  ttps           String   @default("[]") // JSON: TTP[]
+  risks          String   @default("[]") // JSON: IntelRisk[]
+  keyFindings    String   @default("[]") // JSON: KeyFinding[]
+  evidence       String   @default("[]") // JSON: {claim, source, location}
+  summary        String   @default("")
+  riskScore      Int      @default(0)
+  classification String   @default("UNCLASSIFIED")
+  model          String   @default("heuristic-v1")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([documentId])
 }

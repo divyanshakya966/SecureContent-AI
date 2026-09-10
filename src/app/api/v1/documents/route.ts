@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { serializeDocument, logAudit } from "@/lib/api/helpers";
 import { scanContent, computeRisk } from "@/lib/security";
+import { buildIntelligenceReport } from "@/lib/intelligence/extractor";
 import { SAMPLE_DOCUMENTS } from "@/lib/security/samples";
 import { parseDocument } from "@/lib/parsers";
+import { checkRateLimit, rateLimitKey } from "@/lib/validation/rateLimit";
+import { DocumentUploadJsonSchema, parseOr400 } from "@/lib/validation/schemas";
 
 export const runtime = "nodejs";
 
@@ -15,6 +18,7 @@ export async function GET(req: NextRequest) {
     where,
     orderBy: { createdAt: "desc" },
     take: 200,
+    include: { findings: true, transformations: true, intelligence: true },
   });
   return NextResponse.json({ documents: docs.map(serializeDocument) });
 }
@@ -23,6 +27,12 @@ export async function GET(req: NextRequest) {
 // Trust boundary T1 (Browser -> Backend) + T2 (Backend -> Parser):
 // validate size/type, isolate parser errors, never treat file bytes as trusted.
 export async function POST(req: NextRequest) {
+  // Rate limit: 20 uploads/min per IP
+  const rl = checkRateLimit(rateLimitKey(req, "POST /api/v1/documents"), { max: 20, windowMs: 60_000 });
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "Rate limited — try again shortly." }, { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } });
+  }
+
   const contentType = req.headers.get("content-type") ?? "";
 
   let filename = "pasted-document.txt";
@@ -64,10 +74,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No file or content provided." }, { status: 400 });
     }
 
-    // JSON body: either a sample id, or raw paste content
+    // JSON body: either a sample id, or raw paste content — validate with Zod
     const body = await req.json().catch(() => ({} as any));
-    if (body.sampleId) {
-      const sample = SAMPLE_DOCUMENTS.find((s) => s.id === body.sampleId);
+    const parsed = parseOr400(DocumentUploadJsonSchema, body);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
+    const p = parsed.data as any;
+    if (p.sampleId) {
+      const sample = SAMPLE_DOCUMENTS.find((s) => s.id === p.sampleId);
       if (!sample) {
         return NextResponse.json({ error: "Unknown sample id." }, { status: 404 });
       }
@@ -82,12 +97,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ document: serializeDocument(doc) }, { status: 201 });
     }
 
-    if (typeof body.content === "string" && body.content.trim()) {
-      content = body.content;
-      filename = body.title || "pasted-document.txt";
+    if (typeof p.content === "string" && p.content.trim()) {
+      content = p.content;
+      filename = p.title || "pasted-document.txt";
       mimeType = "text/plain";
       sourceKind = "PASTE";
-      const doc = await createDocument({ filename, mimeType, content, sourceKind, title: body.title || filename });
+      const doc = await createDocument({ filename, mimeType, content, sourceKind, title: p.title || filename });
       return NextResponse.json({ document: serializeDocument(doc) }, { status: 201 });
     }
 
@@ -164,6 +179,45 @@ async function createDocument(opts: {
     include: { findings: true },
   });
 
+  // Intelligence-Aware Extraction — run immediately after scan (T2→T3)
+  try {
+    const intel = buildIntelligenceReport({
+      documentId: doc.id,
+      rawContent: content,
+      findings: rawFindings,
+      classification: risk.classification as any,
+      riskScore: risk.total,
+    });
+    await db.intelligenceReport.create({
+      data: {
+        documentId: doc.id,
+        entities: JSON.stringify(intel.entities),
+        iocs: JSON.stringify(intel.iocs),
+        ttps: JSON.stringify(intel.ttps),
+        risks: JSON.stringify(intel.risks),
+        keyFindings: JSON.stringify(intel.keyFindings),
+        evidence: JSON.stringify(intel.evidence),
+        summary: intel.summary,
+        riskScore: intel.riskScore,
+        classification: intel.classification,
+        model: intel.model,
+      },
+    });
+    await logAudit({
+      documentId: doc.id,
+      actor: "intelligence_engine",
+      action: "INTELLIGENCE_EXTRACT",
+      detail: `Intelligence extracted: ${intel.entities.length} entities, ${intel.iocs.length} IOCs, ${intel.ttps.length} TTPs.`,
+    });
+  } catch (e) {
+    console.warn("[intelligence] extraction failed:", e);
+  }
+
+  const full = await db.document.findUnique({
+    where: { id: doc.id },
+    include: { findings: true, intelligence: true, transformations: true },
+  });
+
   await logAudit({
     documentId: doc.id,
     actor: "analyst",
@@ -171,5 +225,5 @@ async function createDocument(opts: {
     detail: `Ingested "${title}" (${mimeType}, ${wordCount} words). Initial risk ${risk.total}/100, classification ${risk.classification}.`,
   });
 
-  return doc;
+  return full ?? doc;
 }

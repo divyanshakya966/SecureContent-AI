@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, ShieldCheck, Sparkles, FileCheck2, RefreshCw,
   ScanLine, Wand2, AlertTriangle, CheckCircle2, XCircle, ScrollText, ChevronRight,
+  Brain, Hash, Crosshair, ShieldAlert, Users, Globe,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useApp } from "@/lib/store";
@@ -32,7 +33,7 @@ import {
 } from "@/lib/display";
 import { cn } from "@/lib/utils";
 
-type Tab = "overview" | "findings" | "diff" | "transform" | "report" | "history";
+type Tab = "overview" | "findings" | "diff" | "transform" | "report" | "intelligence" | "history";
 
 export function DocumentDetailView() {
   const { selectedDocumentId, setView, bumpRefresh } = useApp();
@@ -172,6 +173,7 @@ export function DocumentDetailView() {
           <TabsTrigger value="diff" className="gap-1.5"><Wand2 className="h-3.5 w-3.5" />Before / After</TabsTrigger>
           <TabsTrigger value="transform" className="gap-1.5"><Sparkles className="h-3.5 w-3.5" />Transform</TabsTrigger>
           <TabsTrigger value="report" className="gap-1.5"><FileCheck2 className="h-3.5 w-3.5" />Security Report</TabsTrigger>
+          <TabsTrigger value="intelligence" className="gap-1.5"><Brain className="h-3.5 w-3.5" />Intelligence</TabsTrigger>
           <TabsTrigger value="history" className="gap-1.5"><ScrollText className="h-3.5 w-3.5" />History</TabsTrigger>
         </TabsList>
 
@@ -206,6 +208,11 @@ export function DocumentDetailView() {
         {/* REPORT */}
         <TabsContent value="report" className="mt-4">
           <ReportTab documentId={doc.id} />
+        </TabsContent>
+
+        {/* INTELLIGENCE */}
+        <TabsContent value="intelligence" className="mt-4">
+          <IntelligenceTab documentId={doc.id} />
         </TabsContent>
 
         {/* HISTORY */}
@@ -668,6 +675,124 @@ function printReport(report: SecurityReport) {
   a.download = `security-report-${report.documentId}.txt`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
+// Intelligence tab (signature innovation #2)
+// ---------------------------------------------------------------------------
+
+function IntelligenceTab({ documentId }: { documentId: string }) {
+  const [data, setData] = useState<import("@/types").IntelligenceReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    api.getIntelligence(documentId)
+      .then((r) => active && setData(r))
+      .catch((e) => active && setError(e.message))
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, [documentId]);
+
+  if (loading) return <Card className="p-5"><Skeleton className="h-64 rounded-lg" /></Card>;
+  if (error) return <Card className="p-5 text-sm text-red-600">Failed to load intelligence: {error}</Card>;
+  if (!data) return <Card className="p-5 text-sm text-muted-foreground">No intelligence report.</Card>;
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-5">
+        <div className="flex items-center gap-2">
+          <Brain className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">Intelligence summary</h3>
+          <span className="ml-auto text-[11px] rounded border bg-muted px-2 py-0.5 font-mono">{data.classification} · {data.model}</span>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground bg-muted/40 rounded-md p-3 border">{data.summary}</p>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5 text-center">
+          <div className="rounded border bg-muted/30 p-2"><div className="text-[10px] text-muted-foreground uppercase">Entities</div><div className="font-mono text-lg font-bold">{data.counts.entities}</div></div>
+          <div className="rounded border bg-muted/30 p-2"><div className="text-[10px] text-muted-foreground uppercase">IOCs</div><div className="font-mono text-lg font-bold">{data.counts.iocs}</div></div>
+          <div className="rounded border bg-muted/30 p-2"><div className="text-[10px] text-muted-foreground uppercase">TTPs</div><div className="font-mono text-lg font-bold">{data.counts.ttps}</div></div>
+          <div className="rounded border bg-muted/30 p-2"><div className="text-[10px] text-muted-foreground uppercase">Risks</div><div className="font-mono text-lg font-bold">{data.counts.risks}</div></div>
+          <div className="rounded border bg-muted/30 p-2"><div className="text-[10px] text-muted-foreground uppercase">Findings</div><div className="font-mono text-lg font-bold">{data.counts.keyFindings}</div></div>
+        </div>
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="p-4">
+          <div className="text-xs font-semibold mb-2 flex items-center gap-2"><Users className="h-3.5 w-3.5" /> Entities</div>
+          <div className="space-y-1 max-h-64 overflow-auto pr-1">
+            {data.entities.slice(0, 12).map((e, i) => (
+              <div key={i} className="flex items-center justify-between rounded border bg-muted/30 px-2 py-1.5">
+                <span className="text-xs font-mono truncate">{e.value}</span>
+                <span className="ml-2 shrink-0 rounded border bg-card px-1.5 py-0.5 text-[10px]">{e.type}</span>
+              </div>
+            ))}
+            {!data.entities.length && <span className="text-xs text-muted-foreground">No entities.</span>}
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-xs font-semibold mb-2 flex items-center gap-2"><Globe className="h-3.5 w-3.5" /> IOCs</div>
+          <div className="space-y-1 max-h-64 overflow-auto pr-1">
+            {data.iocs.slice(0, 12).map((i, idx) => (
+              <div key={idx} className="flex items-center justify-between rounded border bg-muted/30 px-2 py-1.5">
+                <span className="text-xs font-mono truncate">{i.value}</span>
+                <span className="ml-2 shrink-0 rounded border px-1.5 py-0.5 text-[10px]">{i.type}</span>
+              </div>
+            ))}
+            {!data.iocs.length && <span className="text-xs text-muted-foreground">No IOCs.</span>}
+          </div>
+        </Card>
+      </div>
+
+      <Card className="p-4">
+        <div className="text-xs font-semibold mb-2 flex items-center gap-2"><Crosshair className="h-3.5 w-3.5" /> TTPs — MITRE ATT&CK</div>
+        {data.ttps.length ? (
+          <div className="space-y-2">
+            {data.ttps.map((t, i) => (
+              <div key={i} className="rounded-md border bg-card p-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="rounded bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 text-xs font-mono">{t.mitreId}</span>
+                  <span className="text-xs font-semibold">{t.technique}</span>
+                  <span className="rounded border bg-muted px-1.5 py-0.5 text-[10px]">{t.tactic}</span>
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">{t.evidence}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">No TTPs mapped.</span>
+        )}
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="p-4">
+          <div className="text-xs font-semibold mb-2 flex items-center gap-2"><ShieldAlert className="h-3.5 w-3.5" /> Risks</div>
+          <div className="space-y-1.5">
+            {data.risks.map((r, i) => (
+              <div key={i} className="rounded border bg-muted/30 p-2.5">
+                <div className="text-xs font-semibold">{r.category} · <span className="font-mono text-[10px]">{r.severity}</span></div>
+                <div className="mt-1 text-xs text-muted-foreground">{r.description}</div>
+              </div>
+            ))}
+            {!data.risks.length && <span className="text-xs text-muted-foreground">No risks synthesized.</span>}
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-xs font-semibold mb-2 flex items-center gap-2"><Hash className="h-3.5 w-3.5" /> Key Findings</div>
+          <div className="space-y-2">
+            {data.keyFindings.map((kf, i) => (
+              <div key={i} className="rounded border bg-card p-2.5">
+                <div className="text-xs">{kf.finding}</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">📎 {kf.evidence}</div>
+              </div>
+            ))}
+            {!data.keyFindings.length && <span className="text-xs text-muted-foreground">No key findings.</span>}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------

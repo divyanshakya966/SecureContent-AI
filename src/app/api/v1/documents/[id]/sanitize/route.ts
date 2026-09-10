@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { serializeDocument, logAudit, getPolicyByName } from "@/lib/api/helpers";
 import { scanContent, sanitizeContent, computeRisk } from "@/lib/security";
 import type { RawFinding } from "@/lib/security";
+import { SanitizeSchema, parseOr400 } from "@/lib/validation/schemas";
+import { checkRateLimit, rateLimitKey } from "@/lib/validation/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -12,8 +14,13 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const rl = checkRateLimit(rateLimitKey(req, `POST /sanitize:${id}`), { max: 20, windowMs: 60_000 });
+  if (!rl.allowed) return NextResponse.json({ error: "Rate limited" }, { status: 429 });
+
   const body = await req.json().catch(() => ({} as any));
-  const policyName = body.policy || "PUBLIC_RELEASE";
+  const parsed = parseOr400(SanitizeSchema, body);
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  const policyName = (parsed.data as any).policy || (parsed.data as any).profile || "PUBLIC_RELEASE";
 
   const doc = await db.document.findUnique({
     where: { id },
@@ -89,7 +96,7 @@ export async function POST(
 
   const updated = await db.document.findUnique({
     where: { id },
-    include: { findings: { orderBy: { createdAt: "asc" } } },
+    include: { findings: { orderBy: { createdAt: "asc" } }, intelligence: true, transformations: true },
   });
   return NextResponse.json({
     document: serializeDocument(updated),
