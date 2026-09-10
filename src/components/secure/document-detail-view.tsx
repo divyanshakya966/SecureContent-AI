@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, ShieldCheck, Sparkles, FileCheck2, RefreshCw,
   ScanLine, Wand2, AlertTriangle, CheckCircle2, XCircle, ScrollText, ChevronRight,
-  Brain, Hash, Crosshair, ShieldAlert, Users, Globe,
+  Brain, Hash, Crosshair, ShieldAlert, Users, Globe, Info, ArrowRight, Eye, Lock,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useApp } from "@/lib/store";
@@ -28,6 +28,7 @@ import {
 import { RiskGauge } from "@/components/secure/risk-gauge";
 import { FindingsTable } from "@/components/secure/findings-table";
 import { DiffView } from "@/components/secure/diff-view";
+import { Stepper, type StepDef } from "@/components/secure/stepper";
 import {
   riskColor, riskLabel, formatRelativeTime, formatBytes, CATEGORY_META,
 } from "@/lib/display";
@@ -36,7 +37,7 @@ import { cn } from "@/lib/utils";
 type Tab = "overview" | "findings" | "diff" | "transform" | "report" | "intelligence" | "history";
 
 export function DocumentDetailView() {
-  const { selectedDocumentId, setView, bumpRefresh } = useApp();
+  const { selectedDocumentId, setView, bumpRefresh, persona } = useApp();
   const [doc, setDoc] = useState<DocumentRecord | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
@@ -122,15 +123,38 @@ export function DocumentDetailView() {
     return acc;
   }, {});
 
+  const workflowSteps: StepDef[] = [
+    { key: "overview", label: "Overview", desc: "Summary", status: "done" },
+    {
+      key: "findings",
+      label: "Findings",
+      desc: `${inputFindings.length} issues`,
+      status: tab === "findings" ? "current" : inputFindings.length > 0 ? "done" : "upcoming",
+    },
+    {
+      key: "diff",
+      label: "Sanitize",
+      desc: doc.sanitizedContent ? "Ready" : "Pending",
+      status: doc.sanitizedContent ? "done" : tab === "diff" ? "current" : "upcoming",
+    },
+    {
+      key: "transform",
+      label: "Transform",
+      desc: doc.transformations && doc.transformations.length > 0 ? "Ready" : "Pending",
+      status: doc.transformations && doc.transformations.length > 0 ? "done" : tab === "transform" ? "current" : doc.status === "BLOCKED" ? "blocked" : "upcoming",
+    },
+  ];
+
+  const riskValue = doc.status === "SANITIZED" || doc.status === "TRANSFORMED" ? doc.riskAfter ?? doc.riskScore : doc.riskBefore ?? doc.riskScore;
+
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex flex-col gap-3">
         <Button variant="ghost" size="sm" onClick={() => setView("documents")} className="w-fit h-7 text-xs text-muted-foreground">
-          <ArrowLeft className="mr-1 h-3.5 w-3.5" /> All documents
+          <ArrowLeft className="mr-1 h-3.5 w-3.5" /> Documents
         </Button>
         <Card className="p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-lg font-semibold tracking-tight">{doc.title}</h2>
@@ -143,22 +167,46 @@ export function DocumentDetailView() {
                 <span>{formatBytes(doc.sizeBytes)}</span>
                 <span>·</span>
                 <span>{doc.metadata.wordCount ?? 0} words</span>
-                <span>·</span>
-                <span>SHA256 {doc.metadata.sha256?.slice(0, 12) ?? "—"}…</span>
+                <span className="hidden sm:inline">·</span>
+                <span className="hidden sm:inline">SHA256 {doc.metadata.sha256?.slice(0, 12) ?? "—"}…</span>
+              </div>
+              <div className="mt-3">
+                <Stepper steps={workflowSteps} onStepClick={(k) => setTab(k as Tab)} />
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              <RiskGauge value={doc.status === "SANITIZED" || doc.status === "TRANSFORMED" ? doc.riskAfter || 0 : doc.riskBefore} before={doc.riskBefore} size={108} />
+            <div className="flex items-center gap-4 shrink-0">
+              <div className="flex flex-col items-center">
+                <RiskGauge value={riskValue} before={doc.riskBefore} size={108} label={persona === "simple" ? `${riskLabel(riskValue)} · ${riskValue}/100` : undefined} />
+                {persona === "simple" && (
+                  <span className="mt-1 text-[11px] text-muted-foreground text-center max-w-[140px] leading-tight">
+                    {riskValue === 0 ? "No issues — safe to share" : riskValue < 15 ? "Minor issues" : riskValue < 40 ? "Needs cleaning" : riskValue < 70 ? "High risk — clean first" : "Critical — do not share raw"}
+                  </span>
+                )}
+              </div>
               <div className="hidden sm:flex flex-col gap-2">
                 <Button variant="outline" size="sm" onClick={runScan} disabled={!!busy} className="h-8 gap-1.5">
                   {busy === "scan" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanLine className="h-3.5 w-3.5" />}
-                  Re-scan
+                  {persona === "simple" ? "Check again" : "Re-scan"}
                 </Button>
                 <Button size="sm" onClick={() => setTab("diff")} disabled={!!busy} className="h-8 gap-1.5">
-                  <Wand2 className="h-3.5 w-3.5" /> Sanitize
+                  <Wand2 className="h-3.5 w-3.5" /> {persona === "simple" ? "Clean →" : "Sanitize"}
                 </Button>
+                {doc.transformations && doc.transformations.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={() => setTab("transform")} className="h-8 gap-1.5">
+                    <Eye className="h-3.5 w-3.5" /> View output
+                  </Button>
+                )}
               </div>
             </div>
+          </div>
+          {/* Mobile quick actions */}
+          <div className="flex sm:hidden gap-2 mt-3">
+            <Button variant="outline" size="sm" onClick={runScan} disabled={!!busy} className="flex-1 h-8 gap-1.5">
+              <ScanLine className="h-3.5 w-3.5" /> Re-scan
+            </Button>
+            <Button size="sm" onClick={() => setTab("diff")} disabled={!!busy} className="flex-1 h-8 gap-1.5">
+              <Wand2 className="h-3.5 w-3.5" /> {persona === "simple" ? "Clean" : "Sanitize"}
+            </Button>
           </div>
         </Card>
       </div>
@@ -170,32 +218,32 @@ export function DocumentDetailView() {
             <ScanLine className="h-3.5 w-3.5" />Findings
             <span className="ml-1 rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{inputFindings.length}</span>
           </TabsTrigger>
-          <TabsTrigger value="diff" className="gap-1.5"><Wand2 className="h-3.5 w-3.5" />Before / After</TabsTrigger>
+          <TabsTrigger value="diff" className="gap-1.5"><Wand2 className="h-3.5 w-3.5" />Sanitize</TabsTrigger>
           <TabsTrigger value="transform" className="gap-1.5"><Sparkles className="h-3.5 w-3.5" />Transform</TabsTrigger>
-          <TabsTrigger value="report" className="gap-1.5"><FileCheck2 className="h-3.5 w-3.5" />Security Report</TabsTrigger>
+          <TabsTrigger value="report" className="gap-1.5"><FileCheck2 className="h-3.5 w-3.5" />Report</TabsTrigger>
           <TabsTrigger value="intelligence" className="gap-1.5"><Brain className="h-3.5 w-3.5" />Intelligence</TabsTrigger>
           <TabsTrigger value="history" className="gap-1.5"><ScrollText className="h-3.5 w-3.5" />History</TabsTrigger>
         </TabsList>
 
-        {/* OVERVIEW */}
         <TabsContent value="overview" className="mt-4">
           <OverviewTab doc={doc} inputFindings={inputFindings} categoryCounts={categoryCounts} outputFindings={outputFindings} />
         </TabsContent>
 
-        {/* FINDINGS */}
         <TabsContent value="findings" className="mt-4">
           <Card className="p-5">
             <div className="mb-3 flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold">Detected findings</h3>
-                <p className="text-xs text-muted-foreground">{inputFindings.length} input-stage findings · {outputFindings.length} output-stage</p>
+                <h3 className="text-sm font-semibold">Findings</h3>
+                <p className="text-xs text-muted-foreground">{inputFindings.length} input · {outputFindings.length} output</p>
               </div>
+              {inputFindings.length > 0 && !doc.sanitizedContent && (
+                <Button size="sm" variant="outline" onClick={() => setTab("diff")} className="gap-1.5">Sanitize <ArrowRight className="h-3.5 w-3.5" /></Button>
+              )}
             </div>
-            <FindingsTable findings={inputFindings} emptyHint="No sensitive content detected. Document is clean." />
+            <FindingsTable findings={inputFindings} emptyHint="No findings." />
           </Card>
         </TabsContent>
 
-        {/* DIFF / SANITIZE */}
         <TabsContent value="diff" className="mt-4">
           <SanitizeTab doc={doc} busy={busy} onSanitize={runSanitize} />
         </TabsContent>
@@ -243,7 +291,7 @@ function OverviewTab({ doc, inputFindings, categoryCounts, outputFindings }: {
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <Card className="p-5 lg:col-span-2">
-        <h3 className="text-sm font-semibold">Security summary</h3>
+        <h3 className="text-sm font-semibold">Summary</h3>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
           {(["PII", "SECRET", "PROMPT_INJECTION", "INTERNAL_ASSET", "UNSAFE_URL"] as const).map((cat) => {
             const meta = CATEGORY_META[cat];
@@ -269,7 +317,7 @@ function OverviewTab({ doc, inputFindings, categoryCounts, outputFindings }: {
         </div>
 
         <div className="mt-5">
-          <div className="mb-2 text-[11px] uppercase tracking-wider text-muted-foreground">Severity distribution</div>
+          <div className="mb-2 text-[11px] uppercase tracking-wider text-muted-foreground">Severity</div>
           <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
             {(["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const).map((sev) => {
               const count = severityCounts[sev] ?? 0;
@@ -301,8 +349,8 @@ function OverviewTab({ doc, inputFindings, categoryCounts, outputFindings }: {
       </Card>
 
       <Card className="p-5">
-        <h3 className="text-sm font-semibold">Validation gate</h3>
-        <p className="text-xs text-muted-foreground">Most recent transformation</p>
+        <h3 className="text-sm font-semibold">Validation</h3>
+        <p className="text-xs text-muted-foreground">Last transformation</p>
         <div className="mt-3 space-y-2.5">
           <GateRow icon={latestTx?.outputDlp === "PASS" ? CheckCircle2 : latestTx ? XCircle : AlertTriangle} label="Output DLP" status={latestTx?.outputDlp ?? "SKIPPED"} ok={latestTx?.outputDlp === "PASS"} />
           <GateRow icon={latestTx?.grounding === "PASS" ? CheckCircle2 : AlertTriangle} label="Grounding / citations" status={latestTx?.grounding ?? "SKIPPED"} ok={latestTx?.grounding === "PASS"} />
@@ -354,43 +402,38 @@ function SanitizeTab({ doc, busy, onSanitize }: {
   onSanitize: (policy: string) => void;
 }) {
   const [policy, setPolicy] = useState<string>(recommendPolicy(doc.classification));
-
   return (
     <div className="space-y-4">
       <Card className="p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="space-y-2 sm:max-w-xs">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Transformation policy</Label>
+          <div className="space-y-2 sm:max-w-md flex-1">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Policy</Label>
             <Select value={policy} onValueChange={setPolicy}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {Object.entries(POLICY_LABELS).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>
-                    <span className="font-medium">{v}</span>
-                    <span className="ml-2 font-mono text-[10px] text-muted-foreground">{k}</span>
-                  </SelectItem>
+                  <SelectItem key={k} value={k}>{v}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground">
-              The policy decides which finding types are masked, redacted, replaced or blocked before the model ever sees the content.
-            </p>
+            <p className="text-[11px] text-muted-foreground">Applied before model access.</p>
           </div>
-          <Button onClick={() => onSanitize(policy)} disabled={!!busy} className="gap-1.5">
+          <Button onClick={() => onSanitize(policy)} disabled={!!busy} className="gap-1.5 shrink-0">
             {busy === "sanitize" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-            Apply policy &amp; sanitize
+            Sanitize
           </Button>
         </div>
+        {doc.status === "BLOCKED" && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-[var(--risk-critical)]/30 bg-[var(--risk-critical)]/5 p-3 text-xs">
+            <Lock className="h-4 w-4 shrink-0 text-[var(--risk-critical)]" />
+            <span>Blocked by policy. Try a stricter policy or review findings.</span>
+          </div>
+        )}
       </Card>
-
       <Card className="p-5">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Before / After</h3>
-          {doc.sanitizedContent ? (
-            <span className="font-mono text-[11px] text-[var(--risk-safe)]">sanitized copy ready</span>
-          ) : (
-            <span className="font-mono text-[11px] text-muted-foreground">not yet sanitized</span>
-          )}
+          <span className="text-[11px] text-muted-foreground">{doc.sanitizedContent ? "Sanitized" : "Pending"}</span>
         </div>
         {doc.sanitizedContent ? (
           <DiffView before={doc.rawContent} after={doc.sanitizedContent} />
@@ -424,7 +467,6 @@ function TransformTab({ doc, busy, onTransform }: {
   const [profile, setProfile] = useState<TransformationProfile>(recommendProfile(doc.classification));
   const [outputType, setOutputType] = useState<OutputType>("EXECUTIVE_SUMMARY");
   const latest = doc.transformations?.[0];
-
   return (
     <div className="space-y-4">
       <Card className="p-5">
@@ -441,7 +483,7 @@ function TransformTab({ doc, busy, onTransform }: {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Output format</Label>
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Output</Label>
             <Select value={outputType} onValueChange={(v) => setOutputType(v as OutputType)}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -454,20 +496,20 @@ function TransformTab({ doc, busy, onTransform }: {
           <div className="flex items-end">
             <Button onClick={() => onTransform(profile, outputType)} disabled={!!busy || doc.status === "BLOCKED"} className="w-full gap-1.5">
               {busy === "transform" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              Generate securely
+              Generate
             </Button>
           </div>
         </div>
         {doc.status === "BLOCKED" && (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-[var(--risk-critical)]/30 bg-[var(--risk-critical)]/5 p-3 text-xs">
             <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--risk-critical)]" />
-            <span>This document is blocked by policy. Sanitize or adjust the policy before transforming.</span>
+            <span>Blocked by policy.</span>
           </div>
         )}
         {!doc.sanitizedContent && doc.status !== "BLOCKED" && (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-[var(--risk-medium)]/30 bg-[var(--risk-medium)]/5 p-3 text-xs">
             <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--risk-medium)]" />
-            <span>No sanitized copy yet — the raw content will be scanned first, then transformed. For best results, sanitize first.</span>
+            <span>No sanitized copy. Will sanitize on transform.</span>
           </div>
         )}
       </Card>
@@ -539,7 +581,6 @@ function ReportTab({ documentId }: { documentId: string }) {
 
   useEffect(() => {
     let active = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     api.getSecurityReport(documentId)
       .then((r) => { if (active) { setReport(r.report); setRiskBreakdown(r.riskBreakdown); } })

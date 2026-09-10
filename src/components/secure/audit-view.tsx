@@ -23,7 +23,7 @@ const ACTION_TONE: Record<string, string> = {
 };
 
 export function AuditView() {
-  const { refreshKey, openDocument } = useApp();
+  const { refreshKey, openDocument, persona } = useApp();
   const [audit, setAudit] = useState<AuditLogEntry[] | null>(null);
   const [query, setQuery] = useState("");
 
@@ -48,27 +48,36 @@ export function AuditView() {
   }
 
   return (
-    <Card className="overflow-hidden">
-      <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <Terminal className="h-4 w-4 text-primary" />
-          <div>
-            <h3 className="text-sm font-semibold">Audit trail</h3>
-            <p className="text-xs text-muted-foreground">{audit.length} entries · newest first</p>
+    <div className="space-y-3">
+      {persona === "simple" && (
+        <Card className="p-3 flex items-start gap-2 bg-primary/5 border-primary/20">
+          <Terminal className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+          <div className="text-xs leading-relaxed text-muted-foreground">
+            <span className="font-medium text-foreground">Activity log:</span> every check, clean and generate is recorded with time. Tap any entry with a file to open it. Use the search to find e.g. “blocked” or “scan”.
+          </div>
+        </Card>
+      )}
+      <Card className="overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <Terminal className="h-4 w-4 text-primary" />
+            <div>
+              <h3 className="text-sm font-semibold">{persona === "simple" ? "Activity log" : "Audit trail"}</h3>
+              <p className="text-xs text-muted-foreground">{audit.length} entries · newest first {persona === "simple" ? "· tap to open file" : ""}</p>
+            </div>
+          </div>
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={persona === "simple" ? "Search e.g. ‘scan’, ‘blocked’…": "Filter by action, actor or detail…"}
+              className="h-9 pl-8"
+            />
           </div>
         </div>
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter by action, actor or detail…"
-            className="h-9 pl-8"
-          />
-        </div>
-      </div>
 
-      <div className="max-h-[calc(100vh-240px)] overflow-auto scroll-thin">
+      <div className="max-h-[calc(100vh-280px)] overflow-auto scroll-thin">
         <ol className="divide-y divide-border">
           {filtered.map((a) => (
             <li
@@ -81,8 +90,9 @@ export function AuditView() {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge className={ACTION_TONE[a.action] ?? ACTION_TONE.UPLOAD}>{a.action}</Badge>
+                  <Badge className={ACTION_TONE[a.action] ?? ACTION_TONE.UPLOAD}>{persona === "simple" ? (a.action === "SCAN" ? "Checked" : a.action === "SANITIZE" ? "Cleaned" : a.action === "TRANSFORM" ? "Generated" : a.action) : a.action}</Badge>
                   <span className="font-mono text-[11px] text-muted-foreground">{a.actor}</span>
+                  {a.documentId && <span className="text-[11px] text-primary hidden sm:inline">→ open file</span>}
                 </div>
                 <p className="mt-1 text-xs text-foreground/80">{a.detail}</p>
               </div>
@@ -96,6 +106,7 @@ export function AuditView() {
           )}
         </ol>
       </div>
-    </Card>
+      </Card>
+    </div>
   );
 }

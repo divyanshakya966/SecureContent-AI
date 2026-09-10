@@ -21,28 +21,15 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Secure Intelligence — Policy-Aware, Intelligence-Aware, Zero-Trust Transformation",
-  description:
-    "Secure Intelligence Content Transformation Platform: policy-aware transformation for audience-specific outputs, intelligence-aware extraction of entities/IOCs/TTPs/risks/evidence, and a zero-trust GenAI pipeline that treats every input and output as untrusted until validated.",
-  keywords: [
-    "SecureContent AI",
-    "Secure Intelligence",
-    "Policy-Aware Transformation",
-    "Intelligence-Aware Extraction",
-    "Zero-Trust GenAI",
-    "IOCs",
-    "TTPs",
-    "MITRE ATT&CK",
-    "OWASP LLM Top 10",
-  ],
+  title: "SecureContent AI — Content Security Platform",
+  description: "Policy-aware content transformation with data protection, risk scoring, and output validation.",
+  keywords: ["SecureContent AI", "Content Security", "DLP", "Threat Intelligence", "Policy Engine"],
   authors: [{ name: "SecureContent AI" }],
-  icons: {
-    icon: "/logo.svg",
-  },
+  icons: { icon: "/logo.svg" },
   openGraph: {
-    title: "Secure Intelligence — SecureContent AI",
-    description: "Policy-Aware · Intelligence-Aware · Zero-Trust GenAI Content Transformation",
-    siteName: "Secure Intelligence",
+    title: "SecureContent AI",
+    description: "Content security platform — scan, sanitize, transform, validate.",
+    siteName: "SecureContent AI",
     type: "website",
   },
 };

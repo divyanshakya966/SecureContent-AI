@@ -1,8 +1,6 @@
 import type { SampleDocument } from "@/types";
 
-// Synthetic benchmark documents for the attack-driven demo.
-// All names, emails, phone numbers, keys and IPs below are FAKE and generated
-// for testing. No real credentials or personal data are used anywhere.
+// Sample documents. All identifiers are fictitious and for testing only.
 
 export const SAMPLE_DOCUMENTS: SampleDocument[] = [
   {

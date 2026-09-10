@@ -27,7 +27,7 @@ interface StatCardProps {
 
 function StatCard({ icon: Icon, label, value, hint, tone = "default" }: StatCardProps) {
   return (
-    <Card className="relative overflow-hidden p-4">
+    <Card className="p-4">
       <div className="flex items-start justify-between">
         <div>
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
@@ -52,14 +52,13 @@ function StatCard({ icon: Icon, label, value, hint, tone = "default" }: StatCard
 }
 
 export function DashboardView() {
-  const { refreshKey, openDocument, setView } = useApp();
+  const { refreshKey, setView } = useApp();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     api.getStats()
       .then((s) => active && setStats(s))
@@ -86,7 +85,7 @@ export function DashboardView() {
     return (
       <Card className="p-8 text-center">
         <p className="text-sm text-muted-foreground">Could not load stats: {error}</p>
-        <Button className="mt-3" onClick={() => setView("upload")}>Ingest your first document</Button>
+        <Button className="mt-3" onClick={() => setView("upload")}>Ingest document</Button>
       </Card>
     );
   }
@@ -96,44 +95,31 @@ export function DashboardView() {
   return (
     <div className="space-y-4">
       {empty && (
-        <Card className="border-primary/30 bg-primary/5 p-5">
-          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="text-sm font-semibold">No documents ingested yet</div>
-              <p className="mt-1 text-xs text-muted-foreground max-w-xl">
-                The console is empty. Load one of the synthetic attack samples to see the security
-                pipeline run end-to-end — detection, sanitization, grounded transformation and the
-                output release gate.
-              </p>
-            </div>
-            <Button onClick={() => setView("upload")}>Ingest content</Button>
+        <Card className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold">No documents</div>
+            <p className="mt-1 text-xs text-muted-foreground">Ingest a file to start analysis.</p>
           </div>
+          <Button onClick={() => setView("upload")}>Ingest</Button>
         </Card>
       )}
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
         <StatCard icon={FileStack} label="Documents" value={stats.totalDocuments} hint={`${stats.scannedDocuments} scanned`} />
-        <StatCard icon={ShieldAlert} label="High risk" value={stats.highRiskDocuments} hint={`${stats.blockedDocuments} blocked by policy`} tone="danger" />
-        <StatCard icon={KeyRound} label="Secrets blocked" value={stats.secretsBlocked} hint={`${stats.injectionBlocked} injection attempts`} tone="danger" />
-        <StatCard icon={CheckCircle2} label="Safe outputs" value={stats.safeOutputsReleased} hint="Passed output DLP" tone="success" />
-        <StatCard
-          icon={ArrowDownRight}
-          label="Avg risk Δ"
-          value={stats.avgRiskReduction > 0 ? `−${stats.avgRiskReduction}` : "0"}
-          hint={`${stats.piiDetected} PII findings detected`}
-          tone="success"
-        />
+        <StatCard icon={ShieldAlert} label="High risk" value={stats.highRiskDocuments} hint={`${stats.blockedDocuments} blocked`} tone="danger" />
+        <StatCard icon={KeyRound} label="Secrets" value={stats.secretsBlocked} hint={`${stats.injectionBlocked} injections`} tone="danger" />
+        <StatCard icon={CheckCircle2} label="Safe outputs" value={stats.safeOutputsReleased} hint="Passed DLP" tone="success" />
+        <StatCard icon={ArrowDownRight} label="Risk reduction" value={stats.avgRiskReduction > 0 ? `−${stats.avgRiskReduction}` : "0"} hint={`${stats.piiDetected} PII findings`} tone="success" />
       </div>
 
-      {/* Intelligence stats — signature innovation #2 */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={Brain} label="Intelligence reports" value={stats.totalIntelligenceReports ?? 0} hint={`${stats.totalEntities ?? 0} entities extracted`} />
-        <StatCard icon={Globe} label="IOCs" value={stats.totalIOCs ?? 0} hint={`${stats.totalEntities ?? 0} entities · ${stats.totalTTPs ?? 0} TTPs`} />
-        <StatCard icon={Crosshair} label="TTPs" value={stats.totalTTPs ?? 0} hint="MITRE ATT&CK techniques" />
-        <Card className="relative overflow-hidden p-4 border-primary/20 bg-primary/5">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Platform</div>
-          <div className="mt-1 text-sm font-semibold leading-tight">Policy-Aware · Intelligence-Aware · Zero-Trust</div>
-          <div className="mt-1 text-xs text-muted-foreground">Three signature innovations</div>
+        <StatCard icon={Brain} label="Intelligence" value={stats.totalIntelligenceReports ?? 0} hint={`${stats.totalEntities ?? 0} entities`} />
+        <StatCard icon={Globe} label="IOCs" value={stats.totalIOCs ?? 0} hint={`${stats.totalTTPs ?? 0} TTPs`} />
+        <StatCard icon={Crosshair} label="TTPs" value={stats.totalTTPs ?? 0} hint="MITRE ATT&CK" />
+        <Card className="p-4 border-primary/20 bg-primary/5">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Pipeline</div>
+          <div className="mt-1 text-sm font-semibold">Scan → Sanitize → Validate</div>
+          <div className="mt-1 text-xs text-muted-foreground">Policy-aware protection</div>
         </Card>
       </div>
 
@@ -141,14 +127,14 @@ export function DashboardView() {
         <Card className="lg:col-span-2 p-5">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold">Risk reduction by document</h3>
-              <p className="text-xs text-muted-foreground">Before sanitization vs. after the release gate</p>
+              <h3 className="text-sm font-semibold">Risk reduction</h3>
+              <p className="text-xs text-muted-foreground">Before vs after sanitization</p>
             </div>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </div>
           <div className="mt-4 h-64">
             {stats.riskTrend.length === 0 ? (
-              <EmptyChart label="No documents yet" />
+              <EmptyChart label="No data" />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={stats.riskTrend} margin={{ top: 4, right: 8, left: -16, bottom: 0 }} barGap={2}>
@@ -157,11 +143,8 @@ export function DashboardView() {
                   <Tooltip
                     contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
                     cursor={{ fill: "var(--muted)", opacity: 0.3 }}
-                    formatter={(value: any, name: any) => [value, name === "before" ? "Before sanitization" : "After release"]}
-                    labelFormatter={(_label, payload) => {
-                      const item = payload?.[0]?.payload as { title?: string } | undefined;
-                      return item?.title ?? _label;
-                    }}
+                    formatter={(value: any, name: any) => [value, name === "before" ? "Before" : "After"]}
+                    labelFormatter={(_label, payload) => (payload?.[0]?.payload as any)?.title ?? _label}
                   />
                   <Bar dataKey="before" name="Before" radius={[3, 3, 0, 0]} fill="var(--risk-critical)" fillOpacity={0.85} />
                   <Bar dataKey="after" name="After" radius={[3, 3, 0, 0]} fill="var(--risk-safe)" fillOpacity={0.9} />
@@ -173,29 +156,17 @@ export function DashboardView() {
 
         <Card className="p-5">
           <h3 className="text-sm font-semibold">Findings by category</h3>
-          <p className="text-xs text-muted-foreground">Detected across all inputs</p>
+          <p className="text-xs text-muted-foreground">All inputs</p>
           <div className="mt-4 h-64">
             {stats.findingsByCategory.length === 0 ? (
-              <EmptyChart label="No findings yet" />
+              <EmptyChart label="No findings" />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={stats.findingsByCategory}
-                    dataKey="count"
-                    nameKey="category"
-                    innerRadius={48}
-                    outerRadius={80}
-                    paddingAngle={2}
-                    stroke="var(--background)"
-                  >
-                    {stats.findingsByCategory.map((entry, i) => (
-                      <Cell key={i} fill={entry.color} />
-                    ))}
+                  <Pie data={stats.findingsByCategory} dataKey="count" nameKey="category" innerRadius={48} outerRadius={80} paddingAngle={2} stroke="var(--background)">
+                    {stats.findingsByCategory.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Pie>
-                  <Tooltip
-                    contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
-                  />
+                  <Tooltip contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                 </PieChart>
               </ResponsiveContainer>
@@ -212,7 +183,7 @@ export function DashboardView() {
           </div>
           <div className="mt-3 max-h-72 overflow-y-auto scroll-thin pr-1">
             {stats.recentActivity.length === 0 ? (
-              <p className="py-8 text-center text-xs text-muted-foreground">No activity recorded yet.</p>
+              <p className="py-8 text-center text-xs text-muted-foreground">No activity.</p>
             ) : (
               <ol className="space-y-2">
                 {stats.recentActivity.map((a) => (
@@ -220,7 +191,7 @@ export function DashboardView() {
                     <div className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 text-xs">
-                        <span className="font-mono font-medium text-foreground">{a.action}</span>
+                        <span className="font-mono font-medium">{a.action}</span>
                         <span className="text-muted-foreground">·</span>
                         <span className="text-muted-foreground">{a.actor}</span>
                       </div>
@@ -235,11 +206,11 @@ export function DashboardView() {
         </Card>
 
         <Card className="p-5">
-          <h3 className="text-sm font-semibold">Classification distribution</h3>
-          <p className="text-xs text-muted-foreground">Auto-assigned at scan time</p>
+          <h3 className="text-sm font-semibold">Classification</h3>
+          <p className="text-xs text-muted-foreground">Auto-assigned</p>
           <div className="mt-4 space-y-3">
             {stats.documentsByClassification.length === 0 ? (
-              <p className="py-8 text-center text-xs text-muted-foreground">No documents yet.</p>
+              <p className="py-8 text-center text-xs text-muted-foreground">No documents.</p>
             ) : (
               stats.documentsByClassification
                 .sort((a, b) => rankClass(a.classification) - rankClass(b.classification))
@@ -253,10 +224,7 @@ export function DashboardView() {
                         <span className="text-muted-foreground tabular-nums">{c.count} · {pct}%</span>
                       </div>
                       <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full"
-                          style={{ width: `${pct}%`, backgroundColor: classColor(c.classification) }}
-                        />
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: classColor(c.classification) }} />
                       </div>
                     </div>
                   );

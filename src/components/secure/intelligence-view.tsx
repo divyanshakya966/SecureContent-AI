@@ -19,7 +19,7 @@ const TACTIC_COLOR: Record<string, string> = {
 };
 
 export function IntelligenceView() {
-  const { openDocument } = useApp();
+  const { openDocument, persona } = useApp();
   const [docs, setDocs] = useState<DocumentRecord[]>([]);
   const [reports, setReports] = useState<Record<string, IntelligenceReport>>({});
   const [selected, setSelected] = useState<string | null>(null);
@@ -81,18 +81,20 @@ export function IntelligenceView() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Brain className="h-5 w-5 text-primary" />
-            Intelligence-Aware Extraction
+            {persona === "simple" ? "Facts & Alerts" : "Intelligence-Aware Extraction"}
           </h2>
-          <p className="text-xs text-muted-foreground">
-            Automatically extracts entities, IOCs, TTPs (MITRE ATT&CK), risks, key findings & evidence — <span className="font-medium">policy-agnostic</span>, then filtered per audience.
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {persona === "simple"
+              ? "Who, what, and what’s suspicious — pulled automatically, before you generate anything."
+              : <>Automatically extracts entities, IOCs, TTPs (MITRE ATT&CK), risks, key findings & evidence — <span className="font-medium">policy-agnostic</span>, then filtered per audience.</>}
           </p>
         </div>
-        <Badge className="bg-[var(--risk-medium)]/10 text-[var(--risk-medium)] border-[var(--risk-medium)]/30">
-          {Object.keys(reports).length} reports · {allEntities.length} entities · {allIOCs.length} IOCs · {allTTPs.length} TTPs
+        <Badge className="bg-[var(--risk-medium)]/10 text-[var(--risk-medium)] border-[var(--risk-medium)]/30 shrink-0">
+          {Object.keys(reports).length} reports · {allEntities.length} {persona === "simple" ? "facts" : "entities"} · {allIOCs.length} IOCs · {allTTPs.length} TTPs
         </Badge>
       </div>
 
