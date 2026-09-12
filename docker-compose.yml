@@ -15,7 +15,11 @@ services:
       - "3000:3000"
     environment:
       DATABASE_URL: "file:/app/db/custom.db"
-      # Optional:
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-2.0-flash}"
+      GROQ_MODEL: "${GROQ_MODEL:-openai/gpt-oss-120b}"
+      # Legacy (deprecated):
       # Z_AI_API_KEY: "${Z_AI_API_KEY:-}"
       DOCLING_WORKER_URL: "http://docling:8001/parse"
     volumes:

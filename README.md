@@ -41,11 +41,26 @@ docker compose --profile docling up    # + Python OCR worker (:8001)
 
 Copy `.env.example` to `.env`:
 
-```
+```env
+# Database
 DATABASE_URL="file:./dev.db"
-Z_AI_API_KEY=""                # optional; mock transform if unset
+
+# LLM — server-side only (never expose to client or commit)
+GEMINI_API_KEY=""              # primary — Google AI Studio: https://aistudio.google.com/apikey
+GROQ_API_KEY=""                # fallback — Groq console: https://console.groq.com/keys (model: openai/gpt-oss-120b)
+GEMINI_MODEL="gemini-2.0-flash"
+GROQ_MODEL="openai/gpt-oss-120b"
+
+# Optional
 DOCLING_WORKER_URL=""          # optional: http://localhost:8001/parse
 ```
+
+> **Security:** `GEMINI_API_KEY` / `GROQ_API_KEY` are read **only** on the server
+> (`src/lib/ai/transform.ts`, `import "server-only"`). Architecture is
+> `Next.js Frontend -> Next.js API (server) -> Security Pipeline -> Gemini/Groq`.
+> Never use `NEXT_PUBLIC_*`, never commit keys, never put them in screenshots/PPT.
+> If no keys are set, transforms fall back to a deterministic offline mock (still
+> exercises Output DLP + grounding).
 
 | Format | Parser |
 |---|---|

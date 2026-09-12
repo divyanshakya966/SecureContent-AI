@@ -36,7 +36,8 @@ This repository is a **prototype** for SIH26154. It demonstrates security contro
 
 ## Hardening checklist before production use
 
-- [ ] Replace the demo `z-ai-web-dev-sdk` mock with an authenticated, tenant-scoped LLM provider and rotate keys via a secrets manager.
+- [x] LLM provider is now server-only Gemini (primary, `GEMINI_API_KEY`) + Groq backup (`GROQ_API_KEY`, `openai/gpt-oss-120b`) via `src/lib/ai/transform.ts` (`import "server-only"`). Rotate keys via env/secrets manager; never expose via `NEXT_PUBLIC_*`.
+- [ ] Replace the remaining offline mock fallback with a tenant-scoped contract and continuous key rotation in production.
 - [ ] Put the Docling worker (if used) behind auth and a sandbox; do not expose `DOCLING_WORKER_URL` publicly.
 - [ ] Add persistence-layer encryption at rest (SQLite SQLCipher or Postgres + pgcrypto) and TLS everywhere.
 - [ ] Add RBAC, tenant isolation, and ACL-aware RAG (not just shared SQLite).

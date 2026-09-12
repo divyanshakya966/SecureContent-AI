@@ -54,7 +54,7 @@ jobs:
         run: bun run build
         env:
           DATABASE_URL: file:./prisma/dev.db
-          # Z_AI_API_KEY not required — transform falls back to mock offline
+          # GEMINI_API_KEY / GROQ_API_KEY not required — transform falls back to mock offline
 
       - name: Upload build artifact (optional)
         uses: actions/upload-artifact@v4
