@@ -167,7 +167,7 @@ export function UploadView() {
           <FlaskConical className="h-4 w-4 text-primary" />
           Samples
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">Synthetic datasets for evaluation. All identifiers are fictitious.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Synthetic datasets for evaluation — each is processed through the genuine pipeline (scan → sanitize → transform → validate) and populates dashboard, intelligence, and audit with real results. All identifiers are fictitious.</p>
         {samples === null ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-32 rounded-xl border bg-muted/20 animate-pulse" />)}

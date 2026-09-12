@@ -111,11 +111,24 @@ export function DocumentsView() {
       {loading ? (
         <div className="flex h-48 items-center justify-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
       ) : filtered.length === 0 ? (
-        <div className="flex h-64 flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground">
-          <Inbox className="h-8 w-8 opacity-30" />
-          <p className="text-sm text-foreground">{docs.length === 0 ? "No documents" : "No results"}</p>
-          <p className="text-xs">{docs.length === 0 ? "Ingest a file to begin." : "Adjust filters."}</p>
-          {docs.length === 0 ? <Button size="sm" onClick={() => setView("upload")}>Ingest</Button> : <Button variant="outline" size="sm" onClick={() => { setQuery(""); setFilterClass("all"); setFilterStatus("all"); }}>Clear filters</Button>}
+        <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 p-8 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-dashed bg-muted/30">
+            <Inbox className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <p className="text-sm font-semibold text-foreground">{docs.length === 0 ? "No documents ingested" : "No matching documents"}</p>
+          <p className="max-w-[44ch] text-xs leading-relaxed text-muted-foreground">
+            {docs.length === 0
+              ? "Ingest a document to collect information. Documents will appear here after you process them through the full pipeline — scan, sanitize, and transform — with genuine risk and classification results."
+              : "No documents match your filters. Adjust filters or clear to see all ingested documents."}
+          </p>
+          {docs.length === 0 ? (
+            <div className="flex flex-col items-center gap-2">
+              <Button size="sm" onClick={() => setView("upload")}>Ingest document</Button>
+              <span className="text-[11px] text-muted-foreground">No mock data is shown until you process a document manually.</span>
+            </div>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => { setQuery(""); setFilterClass("all"); setFilterStatus("all"); }}>Clear filters</Button>
+          )}
         </div>
       ) : (
         <div className="max-h-[calc(100vh-300px)] overflow-auto scroll-thin">

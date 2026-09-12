@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import {
-  FileStack, ShieldAlert, KeyRound, CheckCircle2, Activity, ArrowDownRight, Loader2, Brain, Globe, Crosshair,
+  FileStack, ShieldAlert, KeyRound, CheckCircle2, Activity, ArrowDownRight, Brain, Globe, Crosshair,
+  Inbox, FileSearch, BarChart3, PieChart as PieIcon, Clock3, Layers,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import type { DashboardStats } from "@/types";
@@ -14,7 +15,7 @@ import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell,
   PieChart, Pie, Legend,
 } from "recharts";
-import { formatRelativeTime, riskColor } from "@/lib/display";
+import { formatRelativeTime } from "@/lib/display";
 import { cn } from "@/lib/utils";
 
 interface StatCardProps {
@@ -23,21 +24,24 @@ interface StatCardProps {
   value: number | string;
   hint?: string;
   tone?: "default" | "danger" | "success";
+  empty?: boolean;
 }
 
-function StatCard({ icon: Icon, label, value, hint, tone = "default" }: StatCardProps) {
+function StatCard({ icon: Icon, label, value, hint, tone = "default", empty }: StatCardProps) {
   return (
-    <Card className="p-4">
+    <Card className={cn("p-4", empty && "border-dashed bg-muted/20")}>
       <div className="flex items-start justify-between">
         <div>
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
-          <div className="mt-1 font-mono text-2xl font-semibold tabular-nums">{value}</div>
+          <div className={cn("mt-1 font-mono text-2xl font-semibold tabular-nums", empty && "text-muted-foreground font-normal")}>{value}</div>
           {hint && <div className="mt-1 text-xs text-muted-foreground">{hint}</div>}
         </div>
         <div
           className={cn(
             "flex h-9 w-9 items-center justify-center rounded-lg border",
-            tone === "danger"
+            empty
+              ? "bg-muted text-muted-foreground border-border border-dashed"
+              : tone === "danger"
               ? "bg-[var(--risk-critical)]/10 text-[var(--risk-critical)] border-[var(--risk-critical)]/30"
               : tone === "success"
               ? "bg-[var(--risk-safe)]/10 text-[var(--risk-safe)] border-[var(--risk-safe)]/30"
@@ -48,6 +52,37 @@ function StatCard({ icon: Icon, label, value, hint, tone = "default" }: StatCard
         </div>
       </div>
     </Card>
+  );
+}
+
+function EmptyPlaceholder({
+  icon: Icon,
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="flex h-full min-h-[180px] flex-col items-center justify-center gap-3 px-6 py-8 text-center">
+      <div className="flex h-10 w-10 items-center justify-center rounded-full border border-dashed bg-muted/40">
+        <Icon className="h-5 w-5 text-muted-foreground" />
+      </div>
+      <div>
+        <div className="text-sm font-medium">{title}</div>
+        <p className="mt-1 max-w-[28ch] text-xs leading-relaxed text-muted-foreground">{description}</p>
+      </div>
+      {actionLabel && onAction && (
+        <Button variant="outline" size="sm" className="mt-1 h-7 text-xs" onClick={onAction}>
+          {actionLabel}
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -95,27 +130,88 @@ export function DashboardView() {
   return (
     <div className="space-y-4">
       {empty && (
-        <Card className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <div className="text-sm font-semibold">No documents</div>
-            <p className="mt-1 text-xs text-muted-foreground">Ingest a file to start analysis.</p>
+        <Card className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-dashed bg-muted/20">
+          <div className="flex gap-3">
+            <div className="hidden sm:flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed bg-background">
+              <Inbox className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div>
+              <div className="text-sm font-semibold">Awaiting first document</div>
+              <p className="mt-1 max-w-[48ch] text-xs leading-relaxed text-muted-foreground">
+                Ingest a document to collect information. Dashboard metrics, risk analysis, and intelligence will populate after you process a document through the full pipeline — scan, sanitize, then transform.
+              </p>
+            </div>
           </div>
-          <Button onClick={() => setView("upload")}>Ingest</Button>
+          <Button onClick={() => setView("upload")} className="shrink-0">
+            Ingest document
+          </Button>
         </Card>
       )}
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
-        <StatCard icon={FileStack} label="Documents" value={stats.totalDocuments} hint={`${stats.scannedDocuments} scanned`} />
-        <StatCard icon={ShieldAlert} label="High risk" value={stats.highRiskDocuments} hint={`${stats.blockedDocuments} blocked`} tone="danger" />
-        <StatCard icon={KeyRound} label="Secrets" value={stats.secretsBlocked} hint={`${stats.injectionBlocked} injections`} tone="danger" />
-        <StatCard icon={CheckCircle2} label="Safe outputs" value={stats.safeOutputsReleased} hint="Passed DLP" tone="success" />
-        <StatCard icon={ArrowDownRight} label="Risk reduction" value={stats.avgRiskReduction > 0 ? `−${stats.avgRiskReduction}` : "0"} hint={`${stats.piiDetected} PII findings`} tone="success" />
+        <StatCard
+          icon={FileStack}
+          label="Documents"
+          value={empty ? "—" : stats.totalDocuments}
+          hint={empty ? "Awaiting ingestion" : `${stats.scannedDocuments} scanned`}
+          empty={empty}
+        />
+        <StatCard
+          icon={ShieldAlert}
+          label="High risk"
+          value={empty ? "—" : stats.highRiskDocuments}
+          hint={empty ? "Ingest to analyze risk" : `${stats.blockedDocuments} blocked`}
+          tone={empty ? "default" : "danger"}
+          empty={empty}
+        />
+        <StatCard
+          icon={KeyRound}
+          label="Secrets"
+          value={empty ? "—" : stats.secretsBlocked}
+          hint={empty ? "No detections yet" : `${stats.injectionBlocked} injections`}
+          tone={empty ? "default" : "danger"}
+          empty={empty}
+        />
+        <StatCard
+          icon={CheckCircle2}
+          label="Safe outputs"
+          value={empty ? "—" : stats.safeOutputsReleased}
+          hint={empty ? "Awaiting transformation" : "Passed DLP"}
+          tone={empty ? "default" : "success"}
+          empty={empty}
+        />
+        <StatCard
+          icon={ArrowDownRight}
+          label="Risk reduction"
+          value={empty ? "—" : stats.avgRiskReduction > 0 ? `−${stats.avgRiskReduction}` : "0"}
+          hint={empty ? "No analysis yet" : `${stats.piiDetected} PII findings`}
+          tone={empty ? "default" : "success"}
+          empty={empty}
+        />
       </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={Brain} label="Intelligence" value={stats.totalIntelligenceReports ?? 0} hint={`${stats.totalEntities ?? 0} entities`} />
-        <StatCard icon={Globe} label="IOCs" value={stats.totalIOCs ?? 0} hint={`${stats.totalTTPs ?? 0} TTPs`} />
-        <StatCard icon={Crosshair} label="TTPs" value={stats.totalTTPs ?? 0} hint="MITRE ATT&CK" />
+        <StatCard
+          icon={Brain}
+          label="Intelligence"
+          value={empty ? "—" : stats.totalIntelligenceReports ?? 0}
+          hint={empty ? "Awaiting ingestion" : `${stats.totalEntities ?? 0} entities`}
+          empty={empty}
+        />
+        <StatCard
+          icon={Globe}
+          label="IOCs"
+          value={empty ? "—" : stats.totalIOCs ?? 0}
+          hint={empty ? "No indicators yet" : `${stats.totalTTPs ?? 0} TTPs`}
+          empty={empty}
+        />
+        <StatCard
+          icon={Crosshair}
+          label="TTPs"
+          value={empty ? "—" : stats.totalTTPs ?? 0}
+          hint={empty ? "Awaiting analysis" : "MITRE ATT&CK"}
+          empty={empty}
+        />
         <Card className="p-4 border-primary/20 bg-primary/5">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Pipeline</div>
           <div className="mt-1 text-sm font-semibold">Scan → Sanitize → Validate</div>
@@ -134,7 +230,13 @@ export function DashboardView() {
           </div>
           <div className="mt-4 h-64">
             {stats.riskTrend.length === 0 ? (
-              <EmptyChart label="No data" />
+              <EmptyPlaceholder
+                icon={BarChart3}
+                title="No analysis yet"
+                description="Ingest a document to generate before/after risk comparison. Risk is computed from detection findings and reduced via policy-driven sanitization."
+                actionLabel={empty ? "Ingest document" : undefined}
+                onAction={empty ? () => setView("upload") : undefined}
+              />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={stats.riskTrend} margin={{ top: 4, right: 8, left: -16, bottom: 0 }} barGap={2}>
@@ -159,7 +261,11 @@ export function DashboardView() {
           <p className="text-xs text-muted-foreground">All inputs</p>
           <div className="mt-4 h-64">
             {stats.findingsByCategory.length === 0 ? (
-              <EmptyChart label="No findings" />
+              <EmptyPlaceholder
+                icon={PieIcon}
+                title="No findings yet"
+                description="Ingest a document to populate detection breakdown by category — PII, secrets, prompt injection and internal assets."
+              />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -183,7 +289,13 @@ export function DashboardView() {
           </div>
           <div className="mt-3 max-h-72 overflow-y-auto scroll-thin pr-1">
             {stats.recentActivity.length === 0 ? (
-              <p className="py-8 text-center text-xs text-muted-foreground">No activity.</p>
+              <EmptyPlaceholder
+                icon={Clock3}
+                title="No pipeline activity"
+                description="Ingest a document to collect information. Scan, sanitize, and transformation events will appear here after processing."
+                actionLabel="Go to upload"
+                onAction={() => setView("upload")}
+              />
             ) : (
               <ol className="space-y-2">
                 {stats.recentActivity.map((a) => (
@@ -210,7 +322,11 @@ export function DashboardView() {
           <p className="text-xs text-muted-foreground">Auto-assigned</p>
           <div className="mt-4 space-y-3">
             {stats.documentsByClassification.length === 0 ? (
-              <p className="py-8 text-center text-xs text-muted-foreground">No documents.</p>
+              <EmptyPlaceholder
+                icon={Layers}
+                title="No documents classified"
+                description="Ingest a document to see classification distribution — RESTRICTED, CONFIDENTIAL, INTERNAL, PUBLIC, UNCLASSIFIED."
+              />
             ) : (
               stats.documentsByClassification
                 .sort((a, b) => rankClass(a.classification) - rankClass(b.classification))
@@ -233,17 +349,12 @@ export function DashboardView() {
           </div>
         </Card>
       </div>
-    </div>
-  );
-}
 
-function EmptyChart({ label }: { label: string }) {
-  return (
-    <div className="flex h-full items-center justify-center">
-      <div className="flex flex-col items-center gap-2 text-muted-foreground">
-        <Loader2 className="h-4 w-4 opacity-40" />
-        <span className="text-xs">{label}</span>
-      </div>
+      {!empty && (
+        <p className="text-center text-[11px] text-muted-foreground">
+          Showing genuine pipeline results — metrics update immediately after scan, sanitize, and validated transformation. Ingest another document to extend coverage.
+        </p>
+      )}
     </div>
   );
 }

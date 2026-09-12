@@ -10,7 +10,8 @@ import { Badge } from "@/components/secure/badges";
 import { formatRelativeTime } from "@/lib/display";
 import { useApp } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { Search, Terminal } from "lucide-react";
+import { Search, Terminal, Inbox, Clock3 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const ACTION_TONE: Record<string, string> = {
   UPLOAD: "bg-muted text-muted-foreground border-border",
@@ -23,7 +24,7 @@ const ACTION_TONE: Record<string, string> = {
 };
 
 export function AuditView() {
-  const { refreshKey, openDocument, persona } = useApp();
+  const { refreshKey, openDocument, persona, setView } = useApp();
   const [audit, setAudit] = useState<AuditLogEntry[] | null>(null);
   const [query, setQuery] = useState("");
 
@@ -47,6 +48,8 @@ export function AuditView() {
     );
   }
 
+  const isEmpty = audit.length === 0;
+
   return (
     <div className="space-y-3">
       {persona === "simple" && (
@@ -57,13 +60,31 @@ export function AuditView() {
           </div>
         </Card>
       )}
+      {isEmpty ? (
+        <Card className="p-8 text-center border-dashed bg-muted/20">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-dashed bg-background">
+            <Inbox className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <div className="mt-3 text-sm font-semibold">No audit events</div>
+          <p className="mx-auto mt-1 max-w-[52ch] text-xs leading-relaxed text-muted-foreground">
+            Ingest a document to collect information. Pipeline activity — scans, sanitization, transformations, and validation decisions — will be recorded here with actor and timestamp after you process a document through the full pipeline.
+          </p>
+          <Button size="sm" className="mt-4" onClick={() => setView("upload")}>
+            Ingest document
+          </Button>
+          <p className="mt-2 text-[11px] text-muted-foreground">No mock history is shown until genuine pipeline activity occurs.</p>
+        </Card>
+      ) : null}
+
       <Card className="overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <Terminal className="h-4 w-4 text-primary" />
             <div>
               <h3 className="text-sm font-semibold">{persona === "simple" ? "Activity log" : "Audit trail"}</h3>
-              <p className="text-xs text-muted-foreground">{audit.length} entries · newest first {persona === "simple" ? "· tap to open file" : ""}</p>
+              <p className="text-xs text-muted-foreground">
+                {isEmpty ? "Awaiting ingestion" : `${audit.length} entries · newest first ${persona === "simple" ? "· tap to open file" : ""}`}
+              </p>
             </div>
           </div>
           <div className="relative w-full sm:w-72">
@@ -73,38 +94,46 @@ export function AuditView() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder={persona === "simple" ? "Search e.g. ‘scan’, ‘blocked’…": "Filter by action, actor or detail…"}
               className="h-9 pl-8"
+              disabled={isEmpty}
             />
           </div>
         </div>
 
       <div className="max-h-[calc(100vh-280px)] overflow-auto scroll-thin">
-        <ol className="divide-y divide-border">
-          {filtered.map((a) => (
-            <li
-              key={a.id}
-              className={cn("flex items-start gap-3 px-4 py-3", a.documentId ? "cursor-pointer hover:bg-muted/40" : "")}
-              onClick={() => a.documentId && openDocument(a.documentId)}
-            >
-              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted font-mono text-[10px] uppercase text-muted-foreground">
-                {a.actor.slice(0, 2)}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge className={ACTION_TONE[a.action] ?? ACTION_TONE.UPLOAD}>{persona === "simple" ? (a.action === "SCAN" ? "Checked" : a.action === "SANITIZE" ? "Cleaned" : a.action === "TRANSFORM" ? "Generated" : a.action) : a.action}</Badge>
-                  <span className="font-mono text-[11px] text-muted-foreground">{a.actor}</span>
-                  {a.documentId && <span className="text-[11px] text-primary hidden sm:inline">→ open file</span>}
+        {isEmpty ? (
+          <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 px-6 py-10 text-center">
+            <Clock3 className="h-5 w-5 text-muted-foreground opacity-50" />
+            <p className="text-xs text-muted-foreground">Ingest a document to populate this trail. No mock data is shown.</p>
+          </div>
+        ) : (
+          <ol className="divide-y divide-border">
+            {filtered.map((a) => (
+              <li
+                key={a.id}
+                className={cn("flex items-start gap-3 px-4 py-3", a.documentId ? "cursor-pointer hover:bg-muted/40" : "")}
+                onClick={() => a.documentId && openDocument(a.documentId)}
+              >
+                <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted font-mono text-[10px] uppercase text-muted-foreground">
+                  {a.actor.slice(0, 2)}
                 </div>
-                <p className="mt-1 text-xs text-foreground/80">{a.detail}</p>
-              </div>
-              <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
-                {formatRelativeTime(a.timestamp)}
-              </span>
-            </li>
-          ))}
-          {filtered.length === 0 && (
-            <li className="px-4 py-12 text-center text-sm text-muted-foreground">No matching audit entries.</li>
-          )}
-        </ol>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className={ACTION_TONE[a.action] ?? ACTION_TONE.UPLOAD}>{persona === "simple" ? (a.action === "SCAN" ? "Checked" : a.action === "SANITIZE" ? "Cleaned" : a.action === "TRANSFORM" ? "Generated" : a.action) : a.action}</Badge>
+                    <span className="font-mono text-[11px] text-muted-foreground">{a.actor}</span>
+                    {a.documentId && <span className="text-[11px] text-primary hidden sm:inline">→ open file</span>}
+                  </div>
+                  <p className="mt-1 text-xs text-foreground/80">{a.detail}</p>
+                </div>
+                <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+                  {formatRelativeTime(a.timestamp)}
+                </span>
+              </li>
+            ))}
+            {filtered.length === 0 && (
+              <li className="px-4 py-12 text-center text-sm text-muted-foreground">No matching audit entries.</li>
+            )}
+          </ol>
+        )}
       </div>
       </Card>
     </div>

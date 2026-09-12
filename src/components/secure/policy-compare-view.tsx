@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ShieldCheck, Users, Crown, HeartHandshake, Bug, Eye, ArrowRight } from "lucide-react";
+import { ShieldCheck, Users, Crown, HeartHandshake, Bug, Eye, ArrowRight, Inbox, FileScan } from "lucide-react";
 import { api } from "@/lib/api-client";
 import type { DocumentRecord, PolicyCompareResult, TransformationProfile, OutputType } from "@/types";
 import { useApp } from "@/lib/store";
@@ -19,7 +19,7 @@ const PROFILE_META: Record<TransformationProfile, { label: string; audience: str
 };
 
 export function PolicyCompareView() {
-  const { openDocument, persona } = useApp();
+  const { openDocument, persona, setView } = useApp();
   const [docs, setDocs] = useState<DocumentRecord[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [outputType, setOutputType] = useState<OutputType>("EXECUTIVE_SUMMARY");
@@ -53,6 +53,7 @@ export function PolicyCompareView() {
   }, [selectedId, outputType]);
 
   const doc = docs.find((d) => d.id === selectedId);
+  const empty = docs.length === 0;
 
   return (
     <div className="space-y-5">
@@ -61,28 +62,45 @@ export function PolicyCompareView() {
           <ShieldCheck className="h-5 w-5 text-primary" />
           {persona === "simple" ? "Compare: same file, different privacy" : "Policy-Aware Transformation"}
         </h2>
-        <p className="text-xs text-muted-foreground leading-relaxed">
+        <p className="text-xs text-muted-foreground leading-relaxed max-w-[72ch]">
           {persona === "simple"
-            ? "Same file, 5 privacy levels side-by-side. ‘Public’ hides the most; ‘Security’ keeps clues. Risk drops as more is hidden — green is safer."
-            : "Same source, different audiences — each receives only the information its policy permits. Compare sanitized previews and risk before/after."}
+            ? "Same file, 5 privacy levels side-by-side. ‘Public’ hides the most; ‘Security’ keeps clues. Risk drops as more is hidden — green is safer. Ingest a document to populate this comparison."
+            : "Same source, different audiences — each receives only the information its policy permits. Compare sanitized previews and risk before/after. Ingest a document through the pipeline to generate genuine comparison results."}
         </p>
       </div>
 
-      <Card className="p-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div className="grid gap-3 md:grid-cols-2 flex-1">
-          <div>
-            <label className="text-xs font-medium">Source document</label>
-            <Select value={selectedId} onValueChange={setSelectedId}>
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Pick a document" />
-              </SelectTrigger>
-              <SelectContent>
-                {docs.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>{d.title} — {d.classification}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      {empty && (
+        <Card className="p-8 text-center border-dashed bg-muted/20">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-dashed bg-background">
+            <Inbox className="h-6 w-6 text-muted-foreground" />
           </div>
+          <div className="mt-3 text-sm font-semibold">No source document</div>
+          <p className="mx-auto mt-1 max-w-[52ch] text-xs leading-relaxed text-muted-foreground">
+            Ingest a document to collect information. Policy comparison requires a processed document — upload or paste a file through the pipeline, then return here to compare how each audience policy transforms the same source.
+          </p>
+          <Button size="sm" className="mt-4" onClick={() => setView("upload")}>
+            Ingest document
+          </Button>
+          <p className="mt-3 text-[11px] text-muted-foreground">No mock comparison is shown until you process a document manually.</p>
+        </Card>
+      )}
+
+      {!empty && (
+        <Card className="p-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div className="grid gap-3 md:grid-cols-2 flex-1">
+            <div>
+              <label className="text-xs font-medium">Source document</label>
+              <Select value={selectedId} onValueChange={setSelectedId}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Pick a document" />
+                </SelectTrigger>
+                <SelectContent>
+                  {docs.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>{d.title} — {d.classification}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           <div>
             <label className="text-xs font-medium">Output type</label>
             <Select value={outputType} onValueChange={(v) => setOutputType(v as OutputType)}>
@@ -110,6 +128,7 @@ export function PolicyCompareView() {
           )}
         </div>
       </Card>
+      )}
 
       {error && <Card className="p-3 border-red-500/30 bg-red-500/5 text-xs text-red-600">{error}</Card>}
 
@@ -122,60 +141,68 @@ export function PolicyCompareView() {
         </Card>
       )}
 
-      {result ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {result.items.map((item) => {
-            const meta = PROFILE_META[item.profile];
-            const Icon = meta.icon;
-            return (
-              <Card key={item.profile} className="flex flex-col p-4">
-                <div className="flex items-center gap-2">
-                  <span className={`inline-flex h-7 w-7 items-center justify-center rounded-md border ${meta.color}`}>
-                    <Icon className="h-3.5 w-3.5" />
-                  </span>
-                  <div className="leading-tight">
-                    <div className="text-xs font-semibold">{meta.label}</div>
-                    <div className="text-[10px] text-muted-foreground">{meta.audience} · {meta.description}</div>
+      {!empty && (
+        result ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {result.items.map((item) => {
+              const meta = PROFILE_META[item.profile];
+              const Icon = meta.icon;
+              return (
+                <Card key={item.profile} className="flex flex-col p-4">
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex h-7 w-7 items-center justify-center rounded-md border ${meta.color}`}>
+                      <Icon className="h-3.5 w-3.5" />
+                    </span>
+                    <div className="leading-tight">
+                      <div className="text-xs font-semibold">{meta.label}</div>
+                      <div className="text-[10px] text-muted-foreground">{meta.audience} · {meta.description}</div>
+                    </div>
+                    <Badge className={`ml-auto text-[10px] ${item.blocked ? "bg-red-500/10 text-red-600 border-red-500/30" : "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"}`}>
+                      {item.blocked ? "BLOCKED" : `risk ${item.riskAfter}/100`}
+                    </Badge>
                   </div>
-                  <Badge className={`ml-auto text-[10px] ${item.blocked ? "bg-red-500/10 text-red-600 border-red-500/30" : "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"}`}>
-                    {item.blocked ? "BLOCKED" : `risk ${item.riskAfter}/100`}
-                  </Badge>
-                </div>
 
-                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded border bg-muted/30 p-2">
-                    <div className="text-[10px] text-muted-foreground">Before</div>
-                    <div className="text-sm font-bold">{item.riskBefore}</div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded border bg-muted/30 p-2">
+                      <div className="text-[10px] text-muted-foreground">Before</div>
+                      <div className="text-sm font-bold">{item.riskBefore}</div>
+                    </div>
+                    <div className="flex items-center justify-center"><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>
+                    <div className="rounded border bg-muted/30 p-2">
+                      <div className="text-[10px] text-muted-foreground">After</div>
+                      <div className={`text-sm font-bold ${item.riskAfter < item.riskBefore ? "text-emerald-600" : ""}`}>{item.riskAfter}</div>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-center"><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>
-                  <div className="rounded border bg-muted/30 p-2">
-                    <div className="text-[10px] text-muted-foreground">After</div>
-                    <div className={`text-sm font-bold ${item.riskAfter < item.riskBefore ? "text-emerald-600" : ""}`}>{item.riskAfter}</div>
+
+                  <div className="mt-3 text-[11px] text-muted-foreground">
+                    {item.findingsRedacted} spans redacted/masked/quarantined · {item.blocked ? item.blockReason?.slice(0, 80) : "transformable"}
                   </div>
-                </div>
 
-                <div className="mt-3 text-[11px] text-muted-foreground">
-                  {item.findingsRedacted} spans redacted/masked/quarantined · {item.blocked ? item.blockReason?.slice(0, 80) : "transformable"}
-                </div>
-
-                <div className="mt-3 rounded-md border bg-muted/40 p-3">
-                  <div className="text-[11px] font-semibold mb-1">Sanitized preview</div>
-                  <div className="text-xs leading-relaxed font-mono line-clamp-[10] whitespace-pre-wrap">{item.blocked ? "— BLOCKED —" : item.sanitizedPreview || "(empty)"}</div>
-                </div>
-
-                {item.transformation && (
-                  <div className="mt-3 rounded-md border bg-card p-3">
-                    <div className="text-[11px] font-semibold">Last transformation</div>
-                    <div className="text-[11px] text-muted-foreground">{item.transformation.outputType} · {item.transformation.model} · DLP {item.transformation.outputDlp} · grounding {item.transformation.grounding}</div>
-                    <div className="mt-1 text-xs line-clamp-4 leading-relaxed">{item.transformation.outputContent?.slice(0, 260)}…</div>
+                  <div className="mt-3 rounded-md border bg-muted/40 p-3">
+                    <div className="text-[11px] font-semibold mb-1">Sanitized preview</div>
+                    <div className="text-xs leading-relaxed font-mono line-clamp-[10] whitespace-pre-wrap">{item.blocked ? "— BLOCKED —" : item.sanitizedPreview || "(empty)"}</div>
                   </div>
-                )}
-              </Card>
-            );
-          })}
-        </div>
-      ) : (
-        <Card className="p-8 text-center text-xs text-muted-foreground">Select a document and run “Compare policies” to see how each audience’s output differs.</Card>
+
+                  {item.transformation && (
+                    <div className="mt-3 rounded-md border bg-card p-3">
+                      <div className="text-[11px] font-semibold">Last transformation</div>
+                      <div className="text-[11px] text-muted-foreground">{item.transformation.outputType} · {item.transformation.model} · DLP {item.transformation.outputDlp} · grounding {item.transformation.grounding}</div>
+                      <div className="mt-1 text-xs line-clamp-4 leading-relaxed">{item.transformation.outputContent?.slice(0, 260)}…</div>
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <Card className="p-8 text-center border-dashed bg-muted/20 text-xs text-muted-foreground">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full border border-dashed bg-background">
+              <FileScan className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div className="mt-2 text-sm font-medium text-foreground">Awaiting comparison</div>
+            <p className="mx-auto mt-1 max-w-[48ch]">Ingest a document through the pipeline, then select it above to generate the five-way policy comparison. Genuine sanitized previews and risk deltas will appear here.</p>
+          </Card>
+        )
       )}
 
       <Card className="p-4 bg-primary/5 border-primary/20">
