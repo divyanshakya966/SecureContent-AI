@@ -1,22 +1,4 @@
-# SecureContent AI — gitleaks allowlist
-# All secrets below are SYNTHETIC and used only for testing the security gateway.
-# Never use real credentials in this repo.
-
-src/lib/security/samples.ts
-src/lib/security/detectors.ts
-tests/unit/detectors.test.ts
-tests/unit/sanitize.test.ts
-tests/unit/output-dlp.test.ts
-tests/integration/pipeline.test.ts
-tests/security/injection.test.ts
-tests/redteam/redteam.test.ts
-datasets/
-src/lib/security/samples.ts:AKIA
-src/lib/security/samples.ts:ghp_
-src/lib/security/samples.ts:BEGIN PRIVATE KEY
-src/lib/security/samples.ts:postgres://
-src/lib/security/samples.ts:eyJhbGci
-datasets/secrets/sample-secrets.txt
-datasets/pii/sample-pii.txt
-datasets/mixed/sample-mixed.txt
-datasets/injections/sample-injection.txt
+# SecureContent AI — gitleaks ignore
+# All remaining synthetic secrets are allowlisted via .gitleaks.toml (paths + regexes).
+# Keep this file minimal — add fingerprints only via `gitleaks detect` when needed.
+# See: https://github.com/gitleaks/gitleaks#gitleaksignore
