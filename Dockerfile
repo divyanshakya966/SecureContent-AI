@@ -46,6 +46,8 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
+COPY --from=builder /app/node_modules/.bin/prisma.* ./node_modules/.bin/
 
 # Helper scripts for DB preflight (optional)
 COPY --from=builder /app/.zscripts ./.zscripts
@@ -61,4 +63,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO- http://localhost:3000/api/v1/stats || exit 1
 
 # Preflight: ensure DB exists and push schema, then start Node server
-CMD ["sh", "-c", "mkdir -p /app/db /app/prisma && DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} bunx prisma db push --accept-data-loss 2>/dev/null || true; DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} node .next/standalone/server.js"]
+# standalone was copied to /app (server.js at /app/server.js), use npx for prisma to avoid bunx resolution issues
+CMD ["sh", "-c", "mkdir -p /app/db /app/prisma && DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} npx prisma db push --accept-data-loss 2>/dev/null || true; DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} node server.js"]
