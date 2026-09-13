@@ -21,7 +21,10 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SecureContent AI — Content Security Platform",
+  title: {
+    default: "SecureContent AI — Content Security Platform",
+    template: "%s · SecureContent AI",
+  },
   description: "Policy-aware content transformation with data protection, risk scoring, and output validation.",
   keywords: ["SecureContent AI", "Content Security", "DLP", "Threat Intelligence", "Policy Engine"],
   authors: [{ name: "SecureContent AI" }],

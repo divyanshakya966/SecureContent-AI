@@ -37,7 +37,7 @@ import { cn } from "@/lib/utils";
 type Tab = "overview" | "findings" | "diff" | "transform" | "report" | "intelligence" | "history";
 
 export function DocumentDetailView() {
-  const { selectedDocumentId, setView, bumpRefresh, persona } = useApp();
+  const { selectedDocumentId, setView, bumpRefresh } = useApp();
   const [doc, setDoc] = useState<DocumentRecord | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
@@ -149,81 +149,91 @@ export function DocumentDetailView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3">
-        <Button variant="ghost" size="sm" onClick={() => setView("documents")} className="w-fit h-7 text-xs text-muted-foreground">
-          <ArrowLeft className="mr-1 h-3.5 w-3.5" /> Documents
+      <div className="flex items-center gap-2 text-xs">
+        <Button variant="ghost" size="sm" onClick={() => setView("documents")} className="h-7 gap-1 px-2 text-xs font-medium text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-3.5 w-3.5" /> Documents
         </Button>
-        <Card className="p-5">
+        <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
+        <span className="font-medium tracking-tight truncate">{doc.title}</span>
+        <span className="hidden sm:inline font-mono text-[11px] text-muted-foreground">· {doc.id.slice(0, 8)}</span>
+      </div>
+
+      <Card className="overflow-hidden">
+        <div className="p-5 pb-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-semibold tracking-tight">{doc.title}</h2>
+                <h2 className="text-[18px] font-semibold tracking-tight leading-none">{doc.title}</h2>
                 <ClassificationBadge value={doc.classification} />
                 <StatusBadge status={doc.status} />
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
-                <span>{doc.filename}</span>
-                <span>·</span>
+              <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[11px] leading-none text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />{doc.filename}</span>
+                <span className="hidden sm:inline opacity-30">·</span>
                 <span>{formatBytes(doc.sizeBytes)}</span>
-                <span>·</span>
-                <span>{doc.metadata.wordCount ?? 0} words</span>
-                <span className="hidden sm:inline">·</span>
-                <span className="hidden sm:inline">SHA256 {doc.metadata.sha256?.slice(0, 12) ?? "—"}…</span>
+                <span className="opacity-30">·</span>
+                <span>{doc.metadata.wordCount ?? 0} words · {doc.metadata.pages ?? 1} pages</span>
+                <span className="hidden md:inline opacity-30">·</span>
+                <span className="hidden md:inline">SHA256 {doc.metadata.sha256?.slice(0, 12) ?? "—"}</span>
+                <span className="opacity-30">·</span>
+                <span>{formatRelativeTime(doc.createdAt)}</span>
               </div>
-              <div className="mt-3">
+              <div className="mt-4">
                 <Stepper steps={workflowSteps} onStepClick={(k) => setTab(k as Tab)} />
               </div>
             </div>
-            <div className="flex items-center gap-4 shrink-0">
+            <div className="flex items-start gap-5 shrink-0">
               <div className="flex flex-col items-center">
-                <RiskGauge value={riskValue} before={doc.riskBefore} size={108} label={persona === "simple" ? `${riskLabel(riskValue)} · ${riskValue}/100` : undefined} />
-                {persona === "simple" && (
-                  <span className="mt-1 text-[11px] text-muted-foreground text-center max-w-[140px] leading-tight">
-                    {riskValue === 0 ? "No issues — safe to share" : riskValue < 15 ? "Minor issues" : riskValue < 40 ? "Needs cleaning" : riskValue < 70 ? "High risk — clean first" : "Critical — do not share raw"}
-                  </span>
-                )}
+                <RiskGauge value={riskValue} before={doc.riskBefore} size={96} />
+                <span className="mt-1.5 text-[11px] font-medium" style={{ color: riskColor(riskValue) }}>{riskLabel(riskValue)} · {riskValue}/100</span>
               </div>
-              <div className="hidden sm:flex flex-col gap-2">
-                <Button variant="outline" size="sm" onClick={runScan} disabled={!!busy} className="h-8 gap-1.5">
+              <div className="hidden sm:flex flex-col gap-2 min-w-[132px]">
+                <Button variant="outline" size="sm" onClick={runScan} disabled={!!busy} className="h-8 gap-1.5 justify-start text-xs font-medium">
                   {busy === "scan" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanLine className="h-3.5 w-3.5" />}
-                  {persona === "simple" ? "Check again" : "Re-scan"}
+                  Re-scan
                 </Button>
-                <Button size="sm" onClick={() => setTab("diff")} disabled={!!busy} className="h-8 gap-1.5">
-                  <Wand2 className="h-3.5 w-3.5" /> {persona === "simple" ? "Clean →" : "Sanitize"}
+                <Button size="sm" onClick={() => setTab("diff")} disabled={!!busy} className="h-8 gap-1.5 justify-start text-xs font-medium">
+                  <Wand2 className="h-3.5 w-3.5" /> Sanitize
                 </Button>
                 {doc.transformations && doc.transformations.length > 0 && (
-                  <Button variant="outline" size="sm" onClick={() => setTab("transform")} className="h-8 gap-1.5">
+                  <Button variant="outline" size="sm" onClick={() => setTab("transform")} className="h-8 gap-1.5 justify-start text-xs font-medium">
                     <Eye className="h-3.5 w-3.5" /> View output
                   </Button>
                 )}
               </div>
             </div>
           </div>
-          {/* Mobile quick actions */}
-          <div className="flex sm:hidden gap-2 mt-3">
-            <Button variant="outline" size="sm" onClick={runScan} disabled={!!busy} className="flex-1 h-8 gap-1.5">
+          <div className="flex sm:hidden gap-2 mt-4">
+            <Button variant="outline" size="sm" onClick={runScan} disabled={!!busy} className="flex-1 h-8 gap-1.5 text-xs">
               <ScanLine className="h-3.5 w-3.5" /> Re-scan
             </Button>
-            <Button size="sm" onClick={() => setTab("diff")} disabled={!!busy} className="flex-1 h-8 gap-1.5">
-              <Wand2 className="h-3.5 w-3.5" /> {persona === "simple" ? "Clean" : "Sanitize"}
+            <Button size="sm" onClick={() => setTab("diff")} disabled={!!busy} className="flex-1 h-8 gap-1.5 text-xs">
+              <Wand2 className="h-3.5 w-3.5" /> Sanitize
             </Button>
           </div>
-        </Card>
-      </div>
+        </div>
+        <div className="border-t border-border bg-muted/20 px-5 py-2.5 flex flex-wrap items-center gap-2 text-[11px]">
+          <span className="font-medium text-muted-foreground">Pipeline:</span>
+          <span className="font-mono">Ingest → Scan → Sanitize → Transform → Validate</span>
+          <span className="ml-auto hidden sm:inline-flex items-center gap-1.5 text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Double-gate DLP</span>
+        </div>
+      </Card>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList className="h-10 w-full justify-start overflow-x-auto scroll-thin">
-          <TabsTrigger value="overview" className="gap-1.5"><ShieldCheck className="h-3.5 w-3.5" />Overview</TabsTrigger>
-          <TabsTrigger value="findings" className="gap-1.5">
-            <ScanLine className="h-3.5 w-3.5" />Findings
-            <span className="ml-1 rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{inputFindings.length}</span>
-          </TabsTrigger>
-          <TabsTrigger value="diff" className="gap-1.5"><Wand2 className="h-3.5 w-3.5" />Sanitize</TabsTrigger>
-          <TabsTrigger value="transform" className="gap-1.5"><Sparkles className="h-3.5 w-3.5" />Transform</TabsTrigger>
-          <TabsTrigger value="report" className="gap-1.5"><FileCheck2 className="h-3.5 w-3.5" />Report</TabsTrigger>
-          <TabsTrigger value="intelligence" className="gap-1.5"><Brain className="h-3.5 w-3.5" />Intelligence</TabsTrigger>
-          <TabsTrigger value="history" className="gap-1.5"><ScrollText className="h-3.5 w-3.5" />History</TabsTrigger>
-        </TabsList>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="w-full">
+        <div className="border-b border-border bg-card rounded-t-xl px-1 -mb-px">
+          <TabsList className="h-9 w-full justify-start gap-0 bg-transparent p-0 rounded-none">
+            <TabsTrigger value="overview" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-3 text-xs font-medium"><ShieldCheck className="h-3.5 w-3.5" />Overview</TabsTrigger>
+            <TabsTrigger value="findings" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-3 text-xs font-medium">
+              <ScanLine className="h-3.5 w-3.5" />Findings
+              <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-mono tabular-nums">{inputFindings.length}</span>
+            </TabsTrigger>
+            <TabsTrigger value="diff" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-3 text-xs font-medium"><Wand2 className="h-3.5 w-3.5" />Sanitize</TabsTrigger>
+            <TabsTrigger value="transform" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-3 text-xs font-medium"><Sparkles className="h-3.5 w-3.5" />Transform</TabsTrigger>
+            <TabsTrigger value="report" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-3 text-xs font-medium"><FileCheck2 className="h-3.5 w-3.5" />Report</TabsTrigger>
+            <TabsTrigger value="intelligence" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-3 text-xs font-medium"><Brain className="h-3.5 w-3.5" />Intel</TabsTrigger>
+            <TabsTrigger value="history" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-3 text-xs font-medium"><ScrollText className="h-3.5 w-3.5" />History</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="mt-4">
           <OverviewTab doc={doc} inputFindings={inputFindings} categoryCounts={categoryCounts} outputFindings={outputFindings} />
@@ -825,7 +835,7 @@ function IntelligenceTab({ documentId }: { documentId: string }) {
             {data.keyFindings.map((kf, i) => (
               <div key={i} className="rounded border bg-card p-2.5">
                 <div className="text-xs">{kf.finding}</div>
-                <div className="mt-1 text-[11px] text-muted-foreground">📎 {kf.evidence}</div>
+                <div className="mt-1 font-mono text-[11px] text-muted-foreground">{kf.evidence}</div>
               </div>
             ))}
             {!data.keyFindings.length && <span className="text-xs text-muted-foreground">No key findings.</span>}

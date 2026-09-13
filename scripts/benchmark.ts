@@ -7,11 +7,14 @@ import { scanContent, sanitizeContent, computeRisk, runOutputDlp } from "@/lib/s
 import { DEFAULT_POLICIES } from "@/lib/security/policies";
 import type { PolicyRule } from "@/types";
 
+/* eslint-disable no-console -- benchmark CLI is intentionally console-based */
+
 function policy(name: string): PolicyRule {
-  const p = DEFAULT_POLICIES.find((x) => x.name === name)!;
+  const p = DEFAULT_POLICIES.find((x) => x.name === name);
+  if (!p) throw new Error(`Unknown policy: ${name}`);
   return {
     id: "bench", name: p.name, description: p.description,
-    classification: p.classification as any, allow: [...p.allow], mask: [...p.mask], remove: [...p.remove], block: [...p.block],
+    classification: p.classification as PolicyRule["classification"], allow: [...p.allow], mask: [...p.mask], remove: [...p.remove], block: [...p.block],
     active: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   };
 }

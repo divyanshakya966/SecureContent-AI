@@ -1,5 +1,11 @@
 # SecureContent AI
 
+[![CI](https://github.com/securecontent-ai/securecontent-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/securecontent-ai/securecontent-ai/actions/workflows/ci.yml)
+[![Security](https://github.com/securecontent-ai/securecontent-ai/actions/workflows/security.yml/badge.svg)](https://github.com/securecontent-ai/securecontent-ai/actions/workflows/security.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
 Policy-aware content transformation with built-in data protection. Uploads are scanned, classified, and sanitized before generation. Outputs are re-validated before delivery.
 
 ```
@@ -19,7 +25,7 @@ Ingest → Scan → Classify → Sanitize → Transform → Validate → Deliver
 
 ## Quick Start
 
-**Requirements:** Node 20+, SQLite, Bun
+**Requirements:** Node 20+, SQLite, Bun 1.x
 
 ```bash
 git clone <repo> SecureContent-AI && cd SecureContent-AI
@@ -35,6 +41,12 @@ curl -X POST http://localhost:3000/api/v1/seed   # optional sample data
 ```bash
 docker compose up --build              # app + caddy (:3000, :81)
 docker compose --profile docling up    # + Python OCR worker (:8001)
+```
+
+**Verify:**
+
+```bash
+bun run verify   # lint + typecheck + test + build
 ```
 
 ## Configuration
@@ -117,21 +129,26 @@ mini-services/docling-worker/
 tests/                     # unit / integration / security
 ```
 
-## Testing
+## Quality Gates
 
 ```bash
-bun run test             # all
-bun run test:unit
-bun run test:security
-bun run benchmark
+bun run lint        # ESLint (warnings as CI signal)
+bun run typecheck   # tsc --noEmit (strict)
+bun run test        # vitest (unit + integration + security + redteam)
+bun run benchmark   # synthetic detection benchmark
+bun run verify      # full local CI (lint + typecheck + test + build)
 ```
+
+CI runs on every push/PR via `.github/workflows/ci.yml`; security scans via `security.yml` (gitleaks, semgrep, audit, docker build).
 
 ## Security
 
-- Parser isolation, size/MIME validation
-- Pre-LLM scan + post-LLM DLP (double gate)
-- Policy-enforced sanitization
-- Audit log for every decision
+- Parser isolation, size/MIME validation, SSRF guards
+- Pre-LLM scan + post-LLM DLP (double gate) with deterministic repair
+- Policy-enforced sanitization (5 profiles, allow / mask / remove / block)
+- Audit log for every state transition (upload, scan, sanitize, transform, release)
+- Security headers: CSP, HSTS, X-Frame-Options, etc. (next.config + proxy + Caddy)
+- Rate limiting per IP/route (in-memory; swap to Redis in production)
 - See `docs/threat-model.md` and `docs/architecture.md`
 
 ## References

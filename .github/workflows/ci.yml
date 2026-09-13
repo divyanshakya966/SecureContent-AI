@@ -33,7 +33,7 @@ jobs:
         run: bun run lint
 
       - name: Typecheck
-        run: bunx tsc --noEmit
+        run: bun run typecheck
 
       - name: DB push (SQLite)
         run: bunx prisma db push --accept-data-loss
@@ -55,6 +55,13 @@ jobs:
         env:
           DATABASE_URL: file:./prisma/dev.db
           # GEMINI_API_KEY / GROQ_API_KEY not required — transform falls back to mock offline
+
+      - name: Check no secrets in build
+        run: |
+          if grep -r "GEMINI_API_KEY\|GROQ_API_KEY\|sk-\|gsk_" .next --include="*.js" 2>/dev/null | grep -v ".next/cache" | head -n 5; then
+            echo "::warning::Potential secret found in build output — review."
+          fi
+          echo "Secret scan of build output completed."
 
       - name: Upload build artifact (optional)
         uses: actions/upload-artifact@v4

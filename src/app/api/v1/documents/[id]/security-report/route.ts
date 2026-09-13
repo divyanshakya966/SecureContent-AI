@@ -1,15 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import type { SecurityReport, Severity } from "@/types";
-import { computeRisk, scanContent } from "@/lib/security";
+import { computeRisk } from "@/lib/security";
+import type { RawFinding } from "@/lib/security";
+import { DocumentIdSchema, parseOr400 } from "@/lib/validation/schemas";
+import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
 
 export const runtime = "nodejs";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const idCheck = parseOr400(DocumentIdSchema, id);
+  if (!idCheck.ok) return NextResponse.json({ error: idCheck.error }, { status: 400 });
+
+  const rl = checkRateLimit(rateLimitKey(req, `GET /security-report:${id}`), { max: 60, windowMs: 60_000 });
+  if (!rl.allowed) return NextResponse.json({ error: "Rate limited" }, { status: 429, headers: rateLimitHeaders(rl, 60) });
+
   const doc = await db.document.findUnique({
     where: { id },
     include: {
@@ -17,29 +26,29 @@ export async function GET(
       transformations: { orderBy: { createdAt: "desc" }, take: 1 },
     },
   });
-  if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404, headers: rateLimitHeaders(rl, 60) });
 
   const inputFindings = doc.findings.filter((f) => f.stage === "INPUT");
   const outputFindings = doc.findings.filter((f) => f.stage === "OUTPUT");
-  const risk = computeRisk(
-    inputFindings.map((f) => {
-      const m = /char_offset:(\d+)-(\d+)/.exec(f.location || "");
-      const start = m ? parseInt(m[1], 10) : 0;
-      const end = m ? parseInt(m[2], 10) : start;
-      return {
-        category: f.category as any,
-        type: f.type as any,
-        severity: f.severity as any,
-        confidence: f.confidence,
-        defaultAction: f.action as any,
-        stage: "INPUT",
-        start, end,
-        matchedText: f.matchedText,
-        maskedText: f.maskedText,
-        reason: f.reason,
-      };
-    })
-  );
+  const rawForRisk: RawFinding[] = inputFindings.map((f) => {
+    const m = /char_offset:(\d+)-(\d+)/.exec(f.location || "");
+    const start = m ? parseInt(m[1], 10) : 0;
+    const end = m ? parseInt(m[2], 10) : start;
+    return {
+      category: f.category as RawFinding["category"],
+      type: f.type as RawFinding["type"],
+      severity: f.severity as RawFinding["severity"],
+      confidence: f.confidence,
+      defaultAction: f.action as RawFinding["defaultAction"],
+      stage: "INPUT",
+      start,
+      end,
+      matchedText: f.matchedText,
+      maskedText: f.maskedText,
+      reason: f.reason,
+    };
+  });
+  const risk = computeRisk(rawForRisk);
 
   const severityBreakdown: Record<Severity, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 };
   for (const f of inputFindings) severityBreakdown[f.severity as Severity]++;
@@ -53,7 +62,7 @@ export async function GET(
     riskScore: doc.riskScore,
     riskBefore: doc.riskBefore,
     riskAfter: doc.riskAfter,
-    classification: doc.classification as any,
+    classification: doc.classification as SecurityReport["classification"],
     findings: {
       pii: inputFindings.filter((f) => f.category === "PII").length,
       secrets: inputFindings.filter((f) => f.category === "SECRET").length,
@@ -63,22 +72,22 @@ export async function GET(
       outputLeakage: outputFindings.length + (latest?.leakageCount ?? 0),
     },
     severityBreakdown,
-    grounding: (latest?.grounding ?? "SKIPPED") as any,
-    policyStatus: (latest?.policyStatus ?? "SKIPPED") as any,
-    outputDlp: (latest?.outputDlp ?? "SKIPPED") as any,
+    grounding: (latest?.grounding ?? "SKIPPED") as SecurityReport["grounding"],
+    policyStatus: (latest?.policyStatus ?? "SKIPPED") as SecurityReport["policyStatus"],
+    outputDlp: (latest?.outputDlp ?? "SKIPPED") as SecurityReport["outputDlp"],
     topFindings: inputFindings
       .slice()
-      .sort((a, b) => (b.confidence - a.confidence))
+      .sort((a, b) => b.confidence - a.confidence)
       .slice(0, 8)
       .map((f) => ({
         id: f.id,
         documentId: doc.id,
-        category: f.category as any,
-        type: f.type as any,
-        severity: f.severity as any,
+        category: f.category as SecurityReport["topFindings"][number]["category"],
+        type: f.type as SecurityReport["topFindings"][number]["type"],
+        severity: f.severity as SecurityReport["topFindings"][number]["severity"],
         confidence: f.confidence,
-        action: f.action as any,
-        stage: f.stage as any,
+        action: f.action as SecurityReport["topFindings"][number]["action"],
+        stage: f.stage as SecurityReport["topFindings"][number]["stage"],
         location: f.location,
         matchedText: f.matchedText,
         maskedText: f.maskedText,
@@ -89,6 +98,5 @@ export async function GET(
     generatedAt: new Date().toISOString(),
   };
 
-  // Risk breakdown for the chart
-  return NextResponse.json({ report, riskBreakdown: risk });
+  return NextResponse.json({ report, riskBreakdown: risk }, { headers: rateLimitHeaders(rl, 60) });
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { logAudit } from "@/lib/api/helpers";
 import { scanContent, sanitizeContent, computeRisk, transformContent, runOutputDlp, SAMPLE_DOCUMENTS } from "@/lib/security";
@@ -6,17 +6,21 @@ import { buildIntelligenceReport } from "@/lib/intelligence/extractor";
 import { getPolicyByName } from "@/lib/api/helpers";
 import type { RawFinding } from "@/lib/security";
 import type { TransformationProfile, OutputType } from "@/types";
+import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
 
 export const runtime = "nodejs";
 
-// POST /api/v1/seed — ingest all 5 attack samples through the full pipeline
-// so the dashboard shows realistic data immediately. Idempotent: skips samples
-// already ingested by title.
-export async function POST() {
+// POST /api/v1/seed — ingest all attack samples through the full pipeline.
+// Guarded by rate limiting and idempotency (skips already-ingested titles).
+export async function POST(req: NextRequest) {
+  const rl = checkRateLimit(rateLimitKey(req, "POST /api/v1/seed"), { max: 5, windowMs: 60_000 });
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "Rate limited — seeding is expensive, try again shortly." }, { status: 429, headers: rateLimitHeaders(rl, 5) });
+  }
+
   const results: { title: string; status: string; risk: number }[] = [];
 
   for (const sample of SAMPLE_DOCUMENTS) {
-    // Skip if a sample with the same title already exists.
     const existing = await db.document.findFirst({ where: { title: sample.title, sourceKind: "SAMPLE" } });
     if (existing) {
       results.push({ title: sample.title, status: "skipped (exists)", risk: existing.riskScore });
@@ -70,13 +74,12 @@ export async function POST() {
       detail: `Seeded sample "${sample.title}" (${sample.category}). Risk ${risk.total}/100, ${rawFindings.length} findings.`,
     });
 
-    // Intelligence-Aware Extraction (signature innovation #2) — run immediately after scan
     try {
       const intel = buildIntelligenceReport({
         documentId: doc.id,
         rawContent: sample.content,
         findings: rawFindings,
-        classification: risk.classification as any,
+        classification: risk.classification,
         riskScore: risk.total,
       });
       await db.intelligenceReport.create({
@@ -102,7 +105,6 @@ export async function POST() {
       });
     } catch {}
 
-    // Choose a profile + output type that best demonstrate the pipeline.
     const profile: TransformationProfile = sample.category === "INJECTION" || sample.category === "MIXED"
       ? "SECURITY_INCIDENT"
       : sample.category === "SECRET_HEAVY"
@@ -118,7 +120,6 @@ export async function POST() {
       continue;
     }
 
-    // Reconstruct RawFinding offsets and sanitize.
     const findings: RawFinding[] = rawFindings;
     const sanitized = sanitizeContent(sample.content, findings, policy);
 
@@ -148,7 +149,6 @@ export async function POST() {
       continue;
     }
 
-    // Transform with the LLM.
     try {
       const tx = await transformContent({
         sanitizedContent: sanitized.sanitizedContent,
@@ -196,10 +196,11 @@ export async function POST() {
       });
 
       results.push({ title: sample.title, status: "transformed", risk: risk.total });
-    } catch (e: any) {
-      results.push({ title: sample.title, status: `transform failed: ${e?.message}`, risk: risk.total });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "unknown";
+      results.push({ title: sample.title, status: `transform failed: ${msg}`, risk: risk.total });
     }
   }
 
-  return NextResponse.json({ seeded: results });
+  return NextResponse.json({ seeded: results }, { headers: rateLimitHeaders(rl, 5) });
 }

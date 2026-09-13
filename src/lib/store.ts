@@ -43,7 +43,13 @@ export const useApp = create<AppState>((set) => ({
   openDocument: (id) => set({ view: "document", selectedDocumentId: id }),
   bumpRefresh: () => set((s) => ({ refreshKey: s.refreshKey + 1 })),
   setPersona: (p) => {
-    if (typeof window !== "undefined") window.localStorage.setItem("sc-persona", p);
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem("sc-persona", p);
+      } catch {
+        // ignore quota / privacy mode
+      }
+    }
     set({ persona: p });
   },
   setCommandOpen: (o) => set({ commandOpen: o }),

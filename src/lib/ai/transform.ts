@@ -19,6 +19,12 @@
 
 // This module is server-only. Never import it from client components.
 // Keys (GEMINI_API_KEY / GROQ_API_KEY) must stay on the backend.
+// Enforced via runtime guard — `server-only` is listed as a dependency and
+// the guard below provides the same invariant without breaking vitest.
+
+if (typeof window !== "undefined") {
+  throw new Error("transformContent is server-only — do not import from client components");
+}
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import Groq from "groq-sdk";

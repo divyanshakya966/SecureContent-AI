@@ -60,7 +60,7 @@ function PlaceholderCard({
 }
 
 export function IntelligenceView() {
-  const { openDocument, persona, setView } = useApp();
+  const { openDocument, setView } = useApp();
   const [docs, setDocs] = useState<DocumentRecord[]>([]);
   const [reports, setReports] = useState<Record<string, IntelligenceReport>>({});
   const [selected, setSelected] = useState<string | null>(null);
@@ -117,21 +117,18 @@ export function IntelligenceView() {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold flex items-center gap-2">
+          <h2 className="text-[18px] font-semibold tracking-tight flex items-center gap-2">
             <Brain className="h-5 w-5 text-primary" />
-            {persona === "simple" ? "Facts & Alerts" : "Intelligence-Aware Extraction"}
+            Intelligence
           </h2>
-          <p className="text-xs text-muted-foreground leading-relaxed max-w-[68ch]">
-            {persona === "simple"
-              ? "Who, what, and what’s suspicious — pulled automatically after you ingest a document through the pipeline."
-              : <>Automatically extracts entities, IOCs, TTPs (MITRE ATT&CK), risks, key findings &amp; evidence — <span className="font-medium">policy-agnostic</span>, then filtered per audience. Ingest a document to populate this workspace; no mock data is shown until processing completes.</>}
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground max-w-[72ch]">
+            Entities, IOCs, TTPs (MITRE ATT&CK), risks and key findings — extracted automatically after scan and filtered per audience policy. No mock data is shown until processing completes.
           </p>
         </div>
-        <Badge className="bg-[var(--risk-medium)]/10 text-[var(--risk-medium)] border-[var(--risk-medium)]/30 shrink-0">
-          {Object.keys(reports).length} reports · {allEntities.length} {persona === "simple" ? "facts" : "entities"} · {allIOCs.length} IOCs · {allTTPs.length} TTPs
+        <Badge className="bg-card border-border font-mono text-xs shrink-0">
+          {Object.keys(reports).length} reports · {allEntities.length} entities · {allIOCs.length} IOCs · {allTTPs.length} TTPs
         </Badge>
       </div>
 
@@ -334,7 +331,7 @@ export function IntelligenceView() {
                     active.keyFindings.map((kf, i) => (
                       <div key={i} className="rounded border bg-card p-2.5">
                         <div className="text-xs leading-relaxed">{kf.finding}</div>
-                        <div className="mt-1 text-[11px] text-muted-foreground">📎 {kf.evidence} · <span className={kf.grounded ? "text-emerald-600" : "text-amber-600"}>{kf.grounded ? "grounded" : "ungrounded"}</span></div>
+                        <div className="mt-1 font-mono text-[11px] text-muted-foreground">{kf.evidence} · <span className={kf.grounded ? "text-emerald-600" : "text-amber-600"}>{kf.grounded ? "grounded" : "ungrounded"}</span></div>
                       </div>
                     ))
                   ) : (

@@ -92,13 +92,16 @@ export function UploadView() {
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-5">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <UploadCloud className="h-4 w-4 text-primary" />
-            Upload
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 border border-primary/15 text-primary"><UploadCloud className="h-4 w-4" /></span>
+              Upload file
+            </div>
+            <span className="rounded-full border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Max 10 MB</span>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">PDF, DOCX, TXT, CSV, JSON. Scanned before processing.</p>
+          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">PDF, DOCX, TXT, MD, CSV, JSON — validated, parsed in isolation, then scanned.</p>
           <div
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
@@ -113,8 +116,8 @@ export function UploadView() {
             aria-label="Drop file or click to browse"
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") inputRef.current?.click(); }}
             className={cn(
-              "mt-4 flex h-44 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-              dragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/40"
+              "mt-4 flex h-[172px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed transition-all focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+              dragging ? "border-primary bg-primary/[0.04] shadow-sm" : "border-border bg-muted/20 hover:border-primary/30 hover:bg-card"
             )}
             onClick={() => inputRef.current?.click()}
           >
@@ -129,48 +132,62 @@ export function UploadView() {
                 e.currentTarget.value = "";
               }}
             />
-            {busy?.startsWith("upload:") ? (
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            ) : (
-              <UploadCloud className="h-6 w-6 text-muted-foreground" />
-            )}
-            <p className="mt-2 text-sm font-medium">{busy?.startsWith("upload:") ? "Scanning…" : "Drop file or browse"}</p>
-            <p className="text-[11px] text-muted-foreground">Max 10 MB</p>
+            <div className={cn("flex h-10 w-10 items-center justify-center rounded-full border bg-card shadow-sm", dragging && "border-primary/30")}>
+              {busy?.startsWith("upload:") ? (
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              ) : (
+                <UploadCloud className="h-5 w-5 text-muted-foreground" />
+              )}
+            </div>
+            <p className="mt-3 text-sm font-medium tracking-tight">{busy?.startsWith("upload:") ? "Scanning…" : "Drop file here or click to browse"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">PDF · DOCX · TXT · CSV · JSON</p>
+          </div>
+          <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Parser-isolated · Size/MIME validated
           </div>
         </Card>
 
         <Card className="p-5">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <FileText className="h-4 w-4 text-primary" />
-            Paste
+          <div className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-muted border text-muted-foreground"><FileText className="h-4 w-4" /></span>
+            Paste content
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">Text snippet. Same protection as file upload.</p>
-          <div className="mt-4 space-y-2">
+          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">Direct text — same zero-trust scan and audit as file uploads.</p>
+          <div className="mt-4 space-y-3">
             <div>
-              <Label htmlFor="pt" className="text-xs">Title</Label>
-              <Input id="pt" value={pasteTitle} onChange={(e) => setPasteTitle(e.target.value)} placeholder="snippet.txt" className="mt-1 h-9" />
+              <Label htmlFor="pt" className="text-xs font-medium">Title <span className="font-normal text-muted-foreground">(optional)</span></Label>
+              <Input id="pt" value={pasteTitle} onChange={(e) => setPasteTitle(e.target.value)} placeholder="incident-notes.txt" className="mt-1.5 h-8 text-xs" />
             </div>
             <div>
-              <Label htmlFor="pc" className="text-xs">Content</Label>
-              <Textarea id="pc" value={pasteContent} onChange={(e) => setPasteContent(e.target.value)} placeholder="Paste content…" className="mt-1 min-h-[120px] font-mono text-xs" />
+              <Label htmlFor="pc" className="text-xs font-medium">Content</Label>
+              <Textarea id="pc" value={pasteContent} onChange={(e) => setPasteContent(e.target.value)} placeholder="Paste text for scanning…" className="mt-1.5 min-h-[122px] font-mono text-xs leading-relaxed resize-none" />
+              <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>{pasteContent.length} chars {pasteContent.length > 180000 ? "· near limit" : ""}</span>
+                <span>≤ 200k chars</span>
+              </div>
             </div>
-            <Button onClick={handlePaste} disabled={busy === "paste"} className="w-full">
-              {busy === "paste" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Ingest
+            <Button onClick={handlePaste} disabled={busy === "paste" || !pasteContent.trim()} className="w-full h-9 gap-1.5">
+              {busy === "paste" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Ingest and scan
             </Button>
           </div>
         </Card>
       </div>
 
       <Card className="p-5">
-        <div className="text-sm font-semibold flex items-center gap-2">
-          <FlaskConical className="h-4 w-4 text-primary" />
-          Samples
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold tracking-tight flex items-center gap-2">
+              <FlaskConical className="h-4 w-4 text-muted-foreground" />
+              Synthetic samples
+            </div>
+            <p className="mt-1 max-w-[72ch] text-xs leading-relaxed text-muted-foreground">For evaluation — each runs through the real pipeline (scan → sanitize → transform → validate) and populates dashboard/intelligence/audit. All identifiers are fictitious.</p>
+          </div>
+          <span className="hidden sm:inline-flex rounded-full border bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{samples?.length ?? 5} datasets</span>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">Synthetic datasets for evaluation — each is processed through the genuine pipeline (scan → sanitize → transform → validate) and populates dashboard, intelligence, and audit with real results. All identifiers are fictitious.</p>
         {samples === null ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-32 rounded-xl border bg-muted/20 animate-pulse" />)}
+            {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-[128px] rounded-xl border bg-muted/20 animate-pulse" />)}
           </div>
         ) : (
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -182,17 +199,17 @@ export function UploadView() {
                   key={s.id}
                   onClick={() => handleSample(s.id, s.title)}
                   disabled={!!busy}
-                  className={cn("flex flex-col gap-2 rounded-xl border p-4 text-left transition-colors hover:shadow-sm disabled:opacity-60", SAMPLE_TONE[s.category])}
+                  className={cn("group flex flex-col gap-2.5 rounded-xl border bg-card p-4 text-left transition-all hover:shadow-md hover:border-primary/20 disabled:opacity-60 text-left", SAMPLE_TONE[s.category])}
                 >
                   <div className="flex items-center justify-between">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border bg-background"><Icon className="h-4 w-4" /></div>
-                    <span className="font-mono text-[10px] text-muted-foreground">{s.category}</span>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border bg-card shadow-sm"><Icon className="h-4 w-4" /></div>
+                    <span className="rounded-full border bg-card px-2 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">{s.category}</span>
                   </div>
-                  <div className="text-sm font-medium leading-tight">{s.title}</div>
-                  <p className="text-xs text-muted-foreground line-clamp-2">{s.description}</p>
-                  <div className="mt-auto text-[11px] font-medium text-primary flex items-center gap-1">
-                    {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                    Load →
+                  <div className="text-sm font-semibold leading-tight tracking-tight group-hover:text-primary">{s.title}</div>
+                  <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">{s.description}</p>
+                  <div className="mt-auto inline-flex items-center gap-1 text-xs font-medium text-primary">
+                    {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <span className="transition-transform group-hover:translate-x-0.5">→</span>}
+                    {isBusy ? "Loading…" : "Load dataset"}
                   </div>
                 </button>
               );

@@ -28,3 +28,12 @@ __pycache__
 *.pyc
 .pytest_cache
 .mypy_cache
+# OS / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+# Secrets — never commit
+*.pem
+*.key
+.opencode/

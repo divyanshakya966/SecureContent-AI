@@ -40,13 +40,13 @@ export function MobileNav() {
         </Button>
       </SheetTrigger>
       <SheetContent side="left" className="w-[85vw] max-w-[320px] p-0 bg-sidebar text-sidebar-foreground border-sidebar-border flex flex-col">
-        <SheetHeader className="flex flex-row items-center gap-2.5 px-5 h-16 border-b border-sidebar-border shrink-0">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary/15 border border-sidebar-primary/30">
-            <ShieldCheck className="h-4 w-4 text-sidebar-primary" />
+        <SheetHeader className="flex flex-row items-center gap-2.5 px-4 h-[56px] border-b border-sidebar-border shrink-0">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
+            <ShieldCheck className="h-4 w-4" />
           </div>
-          <div className="leading-tight text-left">
-            <SheetTitle className="text-sm font-semibold tracking-tight text-sidebar-foreground">SecureContent</SheetTitle>
-            <div className="text-[10px] tracking-wide text-sidebar-foreground/60">Content Security</div>
+          <div className="leading-none text-left">
+            <SheetTitle className="text-[13px] font-semibold tracking-tight text-sidebar-foreground">SecureContent AI</SheetTitle>
+            <div className="text-[10px] font-medium tracking-wide text-sidebar-foreground/50">v1.0 · Production</div>
           </div>
         </SheetHeader>
 

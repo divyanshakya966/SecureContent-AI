@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { serializeAudit, ensureDefaultPolicies } from "@/lib/api/helpers";
+import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
 import type { DashboardStats } from "@/types";
 
 export const runtime = "nodejs";
@@ -13,7 +14,12 @@ const CATEGORY_COLOR: Record<string, string> = {
   UNSAFE_URL: "oklch(0.55 0.05 250)",
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const rl = checkRateLimit(rateLimitKey(req, "GET /api/v1/stats"), { max: 60, windowMs: 60_000 });
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "Rate limited" }, { status: 429, headers: rateLimitHeaders(rl, 60) });
+  }
+
   await ensureDefaultPolicies();
 
   const [
@@ -59,7 +65,6 @@ export async function GET() {
 
   const releasedTransformations = await db.transformation.count({ where: { outputDlp: "PASS" } });
 
-  // Average risk reduction across sanitized/transformed documents.
   const reducedDocs = await db.document.findMany({
     where: { riskAfter: { gt: 0 } },
     select: { riskBefore: true, riskAfter: true },
@@ -92,14 +97,22 @@ export async function GET() {
       after: d.riskAfter,
     }));
 
-  // Intelligence aggregates
   let totalEntities = 0;
   let totalIOCs = 0;
   let totalTTPs = 0;
   for (const r of intelReports) {
-    try { totalEntities += JSON.parse(r.entities as any)?.length ?? 0; } catch {}
-    try { totalIOCs += JSON.parse(r.iocs as any)?.length ?? 0; } catch {}
-    try { totalTTPs += JSON.parse(r.ttps as any)?.length ?? 0; } catch {}
+    try {
+      const parsed = JSON.parse(r.entities as string);
+      if (Array.isArray(parsed)) totalEntities += parsed.length;
+    } catch {}
+    try {
+      const parsed = JSON.parse(r.iocs as string);
+      if (Array.isArray(parsed)) totalIOCs += parsed.length;
+    } catch {}
+    try {
+      const parsed = JSON.parse(r.ttps as string);
+      if (Array.isArray(parsed)) totalTTPs += parsed.length;
+    } catch {}
   }
 
   const stats: DashboardStats = {
@@ -125,5 +138,5 @@ export async function GET() {
     totalTTPs,
   };
 
-  return NextResponse.json({ stats });
+  return NextResponse.json({ stats }, { headers: rateLimitHeaders(rl, 60) });
 }

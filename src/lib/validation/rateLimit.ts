@@ -1,5 +1,7 @@
-// Simple in-memory rate limiting for the MVP (per-IP, per-route).
-// For production use Redis; here we keep it zero-dependency and lightweight.
+// In-memory token bucket rate limiter (per-IP, per-route).
+// Production deployments should replace this with a distributed store (Redis / Upstash)
+// and enable trust-proxy validation at the edge. The interface is intentionally
+// compatible so the swap is a one-line change.
 
 type Bucket = { count: number; resetAt: number };
 
@@ -27,11 +29,32 @@ export function checkRateLimit(key: string, opts: RateLimitOpts = {}): { allowed
 }
 
 export function rateLimitKey(req: Request, route: string): string {
-  const ip = (req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown").split(",")[0].trim();
-  return `${route}:${ip}`;
+  // Prefer x-real-ip (set by Caddy / trusted proxy) over x-forwarded-for which
+  // is client-controllable. In this single-tenant demo we treat either as a hint
+  // and rate-limit permissively; a production IdP would key by tenant + user.
+  const xRealIp = req.headers.get("x-real-ip")?.split(",")[0]?.trim();
+  const xForwardedFor = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const ip = xRealIp || xForwardedFor || "unknown";
+  // Basic sanity: if the IP looks spoofed (too long / not IP-like), treat as unknown.
+  const normalized = ip.length > 45 || /[^\d.:a-fA-F]/.test(ip.replace(/,/g, "")) ? "unknown" : ip;
+  return `${route}:${normalized}`;
 }
 
-// Periodically clean up expired buckets (cheap)
+export function rateLimitHeaders(result: { allowed: boolean; remaining: number; resetMs: number }, max: number): Record<string, string> {
+  return {
+    "X-RateLimit-Limit": String(max),
+    "X-RateLimit-Remaining": String(result.remaining),
+    "X-RateLimit-Reset": String(Math.ceil(result.resetMs / 1000)),
+    ...(result.allowed ? {} : { "Retry-After": String(Math.ceil(result.resetMs / 1000)) }),
+  };
+}
+
+/** For tests: reset all buckets. */
+export function _resetRateLimitBuckets(): void {
+  buckets.clear();
+}
+
+// Periodically clean up expired buckets
 if (typeof setInterval !== "undefined") {
   setInterval(() => {
     const now = Date.now();

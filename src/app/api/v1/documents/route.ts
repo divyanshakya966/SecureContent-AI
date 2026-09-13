@@ -5,34 +5,63 @@ import { scanContent, computeRisk } from "@/lib/security";
 import { buildIntelligenceReport } from "@/lib/intelligence/extractor";
 import { SAMPLE_DOCUMENTS } from "@/lib/security/samples";
 import { parseDocument } from "@/lib/parsers";
-import { checkRateLimit, rateLimitKey } from "@/lib/validation/rateLimit";
-import { DocumentUploadJsonSchema, parseOr400 } from "@/lib/validation/schemas";
+import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
+import { DocumentUploadJsonSchema, PaginationSchema, parseOr400 } from "@/lib/validation/schemas";
 
 export const runtime = "nodejs";
 
-// GET /api/v1/documents — list documents (optional ?status= filter)
+const REQUEST_ID_HEADER = "x-request-id";
+
+// GET /api/v1/documents — list documents (optional ?status=, ?take=, ?skip=)
 export async function GET(req: NextRequest) {
-  const status = req.nextUrl.searchParams.get("status");
+  const rl = checkRateLimit(rateLimitKey(req, "GET /api/v1/documents"), { max: 60, windowMs: 60_000 });
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Rate limited — try again shortly." },
+      { status: 429, headers: rateLimitHeaders(rl, 60) }
+    );
+  }
+
+  const raw = {
+    status: req.nextUrl.searchParams.get("status") ?? undefined,
+    take: req.nextUrl.searchParams.get("take") ?? undefined,
+    skip: req.nextUrl.searchParams.get("skip") ?? undefined,
+  };
+  const parsed = parseOr400(PaginationSchema, raw);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400, headers: rateLimitHeaders(rl, 60) });
+  }
+
+  const { status, take, skip } = parsed.data;
   const where = status ? { status } : undefined;
+
   const docs = await db.document.findMany({
     where,
     orderBy: { createdAt: "desc" },
-    take: 200,
+    take,
+    skip,
     include: { findings: true, transformations: true, intelligence: true },
   });
-  return NextResponse.json({ documents: docs.map(serializeDocument) });
+
+  return NextResponse.json(
+    { documents: docs.map(serializeDocument) },
+    { headers: rateLimitHeaders(rl, 60) }
+  );
 }
 
 // POST /api/v1/documents — upload a new document (multipart or JSON)
 // Trust boundary T1 (Browser -> Backend) + T2 (Backend -> Parser):
 // validate size/type, isolate parser errors, never treat file bytes as trusted.
 export async function POST(req: NextRequest) {
-  // Rate limit: 20 uploads/min per IP
   const rl = checkRateLimit(rateLimitKey(req, "POST /api/v1/documents"), { max: 20, windowMs: 60_000 });
   if (!rl.allowed) {
-    return NextResponse.json({ error: "Rate limited — try again shortly." }, { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } });
+    return NextResponse.json(
+      { error: "Rate limited — try again shortly." },
+      { status: 429, headers: rateLimitHeaders(rl, 20) }
+    );
   }
 
+  const correlationId = req.headers.get(REQUEST_ID_HEADER) ?? crypto.randomUUID();
   const contentType = req.headers.get("content-type") ?? "";
 
   let filename = "pasted-document.txt";
@@ -50,41 +79,50 @@ export async function POST(req: NextRequest) {
       if (file instanceof File) {
         filename = file.name;
         mimeType = file.type || "application/octet-stream";
-        // Use ArrayBuffer + parser so PDF/DOCX binaries are not mis-decoded as UTF-8 text
         const buf = Buffer.from(await file.arrayBuffer());
         try {
           const parsed = await parseDocument({ filename, mimeType, buffer: buf });
           content = parsed.text;
-          parsedMeta = { ...parsed.metadata, sha256: parsed.sha256, pages: parsed.pages, sections: parsed.sections, charCount: parsed.charCount, wordCount: parsed.wordCount, warnings: parsed.warnings };
+          parsedMeta = {
+            ...parsed.metadata,
+            sha256: parsed.sha256,
+            pages: parsed.pages,
+            sections: parsed.sections,
+            charCount: parsed.charCount,
+            wordCount: parsed.wordCount,
+            warnings: parsed.warnings,
+          };
           warnings = parsed.warnings;
-        } catch (e: any) {
-          return NextResponse.json({ error: e?.message ?? "File parsing failed." }, { status: 400 });
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : "File parsing failed.";
+          return NextResponse.json({ error: msg }, { status: 400, headers: rateLimitHeaders(rl, 20) });
         }
         sourceKind = "UPLOAD";
         const doc = await createDocument({ filename, mimeType, content, sourceKind, title, parsedMeta, warnings });
-        return NextResponse.json({ document: serializeDocument(doc) }, { status: 201 });
+        return NextResponse.json({ document: serializeDocument(doc) }, { status: 201, headers: rateLimitHeaders(rl, 20) });
       }
       if (title) {
-        // paste via form
         content = (form.get("content") as string) || "";
+        if (!content.trim()) {
+          return NextResponse.json({ error: "Content is required." }, { status: 400, headers: rateLimitHeaders(rl, 20) });
+        }
         filename = title;
         const doc = await createDocument({ filename, mimeType, content, sourceKind, title });
-        return NextResponse.json({ document: serializeDocument(doc) }, { status: 201 });
+        return NextResponse.json({ document: serializeDocument(doc) }, { status: 201, headers: rateLimitHeaders(rl, 20) });
       }
-      return NextResponse.json({ error: "No file or content provided." }, { status: 400 });
+      return NextResponse.json({ error: "No file or content provided." }, { status: 400, headers: rateLimitHeaders(rl, 20) });
     }
 
-    // JSON body: either a sample id, or raw paste content — validate with Zod
-    const body = await req.json().catch(() => ({} as any));
+    const body: unknown = await req.json().catch(() => ({}));
     const parsed = parseOr400(DocumentUploadJsonSchema, body);
     if (!parsed.ok) {
-      return NextResponse.json({ error: parsed.error }, { status: 400 });
+      return NextResponse.json({ error: parsed.error }, { status: 400, headers: rateLimitHeaders(rl, 20) });
     }
-    const p = parsed.data as any;
+    const p = parsed.data as { sampleId?: string; content?: string; title?: string };
     if (p.sampleId) {
       const sample = SAMPLE_DOCUMENTS.find((s) => s.id === p.sampleId);
       if (!sample) {
-        return NextResponse.json({ error: "Unknown sample id." }, { status: 404 });
+        return NextResponse.json({ error: "Unknown sample id." }, { status: 404, headers: rateLimitHeaders(rl, 20) });
       }
       const doc = await createDocument({
         filename: `${sample.id}.txt`,
@@ -94,7 +132,7 @@ export async function POST(req: NextRequest) {
         title: sample.title,
       });
       await logAudit({ documentId: doc.id, actor: "analyst", action: "UPLOAD", detail: `Loaded sample "${sample.title}" (${sample.category}).` });
-      return NextResponse.json({ document: serializeDocument(doc) }, { status: 201 });
+      return NextResponse.json({ document: serializeDocument(doc) }, { status: 201, headers: rateLimitHeaders(rl, 20) });
     }
 
     if (typeof p.content === "string" && p.content.trim()) {
@@ -103,13 +141,16 @@ export async function POST(req: NextRequest) {
       mimeType = "text/plain";
       sourceKind = "PASTE";
       const doc = await createDocument({ filename, mimeType, content, sourceKind, title: p.title || filename });
-      return NextResponse.json({ document: serializeDocument(doc) }, { status: 201 });
+      return NextResponse.json({ document: serializeDocument(doc) }, { status: 201, headers: rateLimitHeaders(rl, 20) });
     }
 
-    return NextResponse.json({ error: "Provide a file, sampleId, or content." }, { status: 400 });
-  } catch (e: any) {
-    console.error("[documents POST]", e);
-    return NextResponse.json({ error: e?.message ?? "Upload failed." }, { status: 500 });
+    return NextResponse.json({ error: "Provide a file, sampleId, or content." }, { status: 400, headers: rateLimitHeaders(rl, 20) });
+  } catch (e: unknown) {
+    console.error(`[documents POST] correlation=${correlationId}`, e);
+    const msg = e instanceof Error ? e.message : "Upload failed.";
+    // Do not leak internal stack; return generic message for unexpected errors.
+    const isExpected = msg.includes("too large") || msg.includes("parsing");
+    return NextResponse.json({ error: isExpected ? msg : "Upload failed." }, { status: 500, headers: rateLimitHeaders(rl, 20) });
   }
 }
 
@@ -125,7 +166,6 @@ async function createDocument(opts: {
   const { filename, mimeType, content, sourceKind } = opts;
   const title = opts.title || filename.replace(/\.[^.]+$/, "");
 
-  // If the parser already provided hashes/stats, reuse them; otherwise compute here.
   const metaFromParser = opts.parsedMeta;
   const sha256 = (metaFromParser?.sha256 as string) || (await import("crypto")).createHash("sha256").update(content).digest("hex");
   const charCount = (metaFromParser?.charCount as number) ?? content.length;
@@ -133,7 +173,6 @@ async function createDocument(opts: {
   const pages = (metaFromParser?.pages as number) ?? Math.max(1, Math.ceil(content.split(/\r?\n/).length / 40));
   const sections = (metaFromParser?.sections as number) ?? Math.max(1, content.split(/\n\s*\n/).filter((p) => p.trim()).length);
 
-  // Eagerly run the security scan so the dashboard reflects risk immediately.
   const rawFindings = scanContent(content);
   const risk = computeRisk(rawFindings);
 
@@ -179,13 +218,12 @@ async function createDocument(opts: {
     include: { findings: true },
   });
 
-  // Intelligence-Aware Extraction — run immediately after scan (T2→T3)
   try {
     const intel = buildIntelligenceReport({
       documentId: doc.id,
       rawContent: content,
       findings: rawFindings,
-      classification: risk.classification as any,
+      classification: risk.classification,
       riskScore: risk.total,
     });
     await db.intelligenceReport.create({

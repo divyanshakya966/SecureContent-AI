@@ -19,7 +19,7 @@ const PROFILE_META: Record<TransformationProfile, { label: string; audience: str
 };
 
 export function PolicyCompareView() {
-  const { openDocument, persona, setView } = useApp();
+  const { openDocument, setView } = useApp();
   const [docs, setDocs] = useState<DocumentRecord[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [outputType, setOutputType] = useState<OutputType>("EXECUTIVE_SUMMARY");
@@ -58,14 +58,12 @@ export function PolicyCompareView() {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold flex items-center gap-2">
+        <h2 className="text-[18px] font-semibold tracking-tight flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-primary" />
-          {persona === "simple" ? "Compare: same file, different privacy" : "Policy-Aware Transformation"}
+          Policy Lab
         </h2>
-        <p className="text-xs text-muted-foreground leading-relaxed max-w-[72ch]">
-          {persona === "simple"
-            ? "Same file, 5 privacy levels side-by-side. ‘Public’ hides the most; ‘Security’ keeps clues. Risk drops as more is hidden — green is safer. Ingest a document to populate this comparison."
-            : "Same source, different audiences — each receives only the information its policy permits. Compare sanitized previews and risk before/after. Ingest a document through the pipeline to generate genuine comparison results."}
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground max-w-[72ch]">
+          Same source, five audience policies side-by-side. Compare sanitized previews and risk before/after. Ingest a document through the pipeline to generate genuine results.
         </p>
       </div>
 
@@ -205,18 +203,10 @@ export function PolicyCompareView() {
         )
       )}
 
-      <Card className="p-4 bg-primary/5 border-primary/20">
-        <div className="text-xs font-semibold">{persona === "simple" ? "How to use this" : "How it works"}</div>
-        <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          {persona === "simple" ? (
-            <>
-              Pick a file above. Leftmost card (Public) is safest to share outside. Rightmost (Security) keeps clues for your security team. Green risk numbers are safer. <span className="font-medium">No private data ever reaches the AI</span> — it’s replaced before sending.
-            </>
-          ) : (
-            <>
-              Each policy defines <span className="font-medium">allow / mask / remove / block</span> buckets over finding types. The same raw content is sanitized five different ways — <span className="font-medium">PUBLIC_RELEASE</span> strips everything, <span className="font-medium">SECURITY_INCIDENT</span> preserves IOCs/TTPs/timeline — then transformed. No raw secret ever reaches the model; the <span className="font-medium">&lt;UNTRUSTED_DOCUMENT&gt;</span> envelope enforces treat-as-data.
-            </>
-          )}
+      <Card className="p-4 bg-muted/30 border-dashed">
+        <div className="text-xs font-semibold tracking-tight">How it works</div>
+        <div className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+          Each policy defines <span className="font-medium text-foreground">allow / mask / remove / block</span> buckets over finding types. The same raw content is sanitized five different ways — <span className="font-mono text-[11px]">PUBLIC_RELEASE</span> strips everything, <span className="font-mono text-[11px]">SECURITY_INCIDENT</span> preserves IOCs/TTPs/timeline — then transformed. No raw secret ever reaches the model; the <span className="font-mono text-[11px]">&lt;UNTRUSTED_DOCUMENT&gt;</span> envelope enforces treat-as-data.
         </div>
       </Card>
     </div>

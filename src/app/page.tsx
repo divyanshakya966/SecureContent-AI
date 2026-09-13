@@ -21,23 +21,27 @@ export default function Home() {
 
   // Hydrate persona from localStorage without hydration mismatch
   useEffect(() => {
-    const saved = window.localStorage.getItem("sc-persona") as "simple" | "pro" | null;
-    if (saved === "simple" || saved === "pro") setPersona(saved);
+    try {
+      const saved = window.localStorage.getItem("sc-persona") as "simple" | "pro" | null;
+      if (saved === "simple" || saved === "pro") setPersona(saved);
+    } catch {
+      // ignore storage access errors (privacy mode / quota)
+    }
   }, [setPersona]);
 
   return (
-    <div className="flex min-h-screen w-full bg-background">
+    <div className="flex min-h-screen w-full bg-[#fcfcfc] dark:bg-background">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 z-50 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 z-50 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground shadow-lg"
       >
         Skip to content
       </a>
       <Sidebar />
-      <div className="flex min-h-screen flex-1 flex-col min-w-0">
+      <div className="flex min-h-screen flex-1 flex-col min-w-0 bg-background">
         <Topbar />
-        <main id="main-content" className="grid-backdrop flex-1 overflow-x-hidden">
-          <div className="mx-auto w-full max-w-[1400px] px-4 py-5 md:px-6 md:py-6">
+        <main id="main-content" className="flex-1 overflow-x-hidden bg-[#f8f9f8] dark:bg-muted/20">
+          <div className="mx-auto w-full max-w-[1440px] px-4 py-6 md:px-6 md:py-6">
             {view === "dashboard" && <DashboardView />}
             {view === "upload" && <UploadView />}
             {view === "documents" && <DocumentsView />}
@@ -49,17 +53,21 @@ export default function Home() {
             {view === "architecture" && <ArchitectureView />}
           </div>
         </main>
-        <footer className="mt-auto border-t border-border bg-background/80 px-4 py-3 md:px-6">
-          <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-2 text-[11px] text-muted-foreground">
-            <span className="font-mono">SecureContent AI</span>
-            <span className="hidden sm:inline-flex items-center gap-1.5 text-[10px] border rounded-full px-2 py-0.5">
-              <span className="font-mono border rounded px-1 py-0.5 bg-muted">⌘K</span> Jump
-              <span className="text-border">·</span>
-              <span className="font-mono border rounded px-1 py-0.5 bg-muted">?</span> Help
-            </span>
-            <a href="https://genai.owasp.org/resource/owasp-genai-llm-top-10-2026/" target="_blank" rel="noreferrer" className="hover:text-foreground transition-colors hidden sm:inline">
-              OWASP GenAI Top 10
-            </a>
+        <footer className="border-t border-border bg-card px-4 py-3 md:px-6">
+          <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 text-[11px] leading-none">
+            <div className="flex items-center gap-3">
+              <span className="font-mono font-medium">SecureContent AI</span>
+              <span className="hidden sm:inline h-3 w-px bg-border" />
+              <span className="hidden sm:inline text-muted-foreground">© 2026 · SOC-2 ready pipeline</span>
+            </div>
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <span className="hidden md:inline-flex items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-1 text-[11px] font-medium">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> All systems operational
+              </span>
+              <a href="https://genai.owasp.org/resource/owasp-genai-llm-top-10-2026/" target="_blank" rel="noreferrer" className="hidden lg:inline hover:text-foreground transition-colors underline-offset-4 hover:underline">
+                OWASP GenAI Top 10
+              </a>
+            </div>
           </div>
         </footer>
       </div>

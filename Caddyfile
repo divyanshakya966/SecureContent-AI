@@ -1,15 +1,17 @@
-:81 {
-	@transform_port_query {
-		query XTransformPort=*
-	}
+# SecureContent AI — Caddy reverse proxy
+# Single fixed upstream; no query-controlled port indirection (SSRF hardening).
+# Security headers are emitted both here and in Next.js (defense in depth).
 
-	handle @transform_port_query {
-		reverse_proxy localhost:{query.XTransformPort} {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
+:81 {
+	header {
+		# HSTS (effective when TLS termination is in front of Caddy)
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# Minimal CSP — Next.js emits a more specific one per-response
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 	}
 
 	handle {
@@ -18,6 +20,14 @@
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
+			header_up X-Request-Id {http.request.uuid}
+		}
+	}
+
+	# Health check endpoint (proxied)
+	handle /health* {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
 		}
 	}
 }

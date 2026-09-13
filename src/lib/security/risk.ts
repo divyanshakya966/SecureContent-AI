@@ -67,8 +67,8 @@ export function computeRisk(findings: RawFinding[]): RiskBreakdown {
   }, 0);
 
   const mitigated = Math.max(0, raw - mitigation * 0.4);
-  const total = Math.min(100, Math.round(raw));
-  const classification = classify(findings, raw);
+  const total = Math.min(100, Math.round(mitigated));
+  const classification = classify(findings, mitigated);
 
   return {
     pii: Math.round(pii),
@@ -81,17 +81,17 @@ export function computeRisk(findings: RawFinding[]): RiskBreakdown {
   };
 }
 
-function classify(findings: RawFinding[], rawRisk: number): Classification {
+function classify(findings: RawFinding[], residualRisk: number): Classification {
   const hasInjection = findings.some((f) => f.category === "PROMPT_INJECTION");
   const hasCriticalSecret = findings.some(
     (f) => f.category === "SECRET" && f.severity === "CRITICAL"
   );
   const hasGovtId = findings.some((f) => f.type === "AADHAAR" || f.type === "PAN" || f.type === "CREDIT_CARD");
 
-  if (hasInjection && (hasCriticalSecret || rawRisk > 60)) return "RESTRICTED";
-  if (hasCriticalSecret || hasGovtId || rawRisk >= 55) return "CONFIDENTIAL";
-  if (rawRisk >= 20) return "INTERNAL";
-  if (rawRisk > 0) return "INTERNAL";
+  if (hasInjection && (hasCriticalSecret || residualRisk > 60)) return "RESTRICTED";
+  if (hasCriticalSecret || hasGovtId || residualRisk >= 55) return "CONFIDENTIAL";
+  if (residualRisk >= 20) return "INTERNAL";
+  if (residualRisk > 0) return "INTERNAL";
   return "PUBLIC";
 }
 

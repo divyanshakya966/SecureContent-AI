@@ -24,7 +24,7 @@ const ACTION_TONE: Record<string, string> = {
 };
 
 export function AuditView() {
-  const { refreshKey, openDocument, persona, setView } = useApp();
+  const { refreshKey, openDocument, setView } = useApp();
   const [audit, setAudit] = useState<AuditLogEntry[] | null>(null);
   const [query, setQuery] = useState("");
 
@@ -52,14 +52,6 @@ export function AuditView() {
 
   return (
     <div className="space-y-3">
-      {persona === "simple" && (
-        <Card className="p-3 flex items-start gap-2 bg-primary/5 border-primary/20">
-          <Terminal className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-          <div className="text-xs leading-relaxed text-muted-foreground">
-            <span className="font-medium text-foreground">Activity log:</span> every check, clean and generate is recorded with time. Tap any entry with a file to open it. Use the search to find e.g. “blocked” or “scan”.
-          </div>
-        </Card>
-      )}
       {isEmpty ? (
         <Card className="p-8 text-center border-dashed bg-muted/20">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-dashed bg-background">
@@ -78,22 +70,22 @@ export function AuditView() {
 
       <Card className="overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <Terminal className="h-4 w-4 text-primary" />
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md border bg-muted"><Terminal className="h-3.5 w-3.5 text-muted-foreground" /></span>
             <div>
-              <h3 className="text-sm font-semibold">{persona === "simple" ? "Activity log" : "Audit trail"}</h3>
+              <h3 className="text-sm font-semibold tracking-tight">Audit trail</h3>
               <p className="text-xs text-muted-foreground">
-                {isEmpty ? "Awaiting ingestion" : `${audit.length} entries · newest first ${persona === "simple" ? "· tap to open file" : ""}`}
+                {isEmpty ? "Awaiting ingestion" : `${audit.length} entries · newest first · immutable`}
               </p>
             </div>
           </div>
           <div className="relative w-full sm:w-72">
-            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={persona === "simple" ? "Search e.g. ‘scan’, ‘blocked’…": "Filter by action, actor or detail…"}
-              className="h-9 pl-8"
+              placeholder="Filter by action, actor or detail"
+              className="h-8 pl-8 text-xs bg-muted/30 border-border"
               disabled={isEmpty}
             />
           </div>
@@ -118,7 +110,7 @@ export function AuditView() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge className={ACTION_TONE[a.action] ?? ACTION_TONE.UPLOAD}>{persona === "simple" ? (a.action === "SCAN" ? "Checked" : a.action === "SANITIZE" ? "Cleaned" : a.action === "TRANSFORM" ? "Generated" : a.action) : a.action}</Badge>
+                    <Badge className={ACTION_TONE[a.action] ?? ACTION_TONE.UPLOAD}>{a.action}</Badge>
                     <span className="font-mono text-[11px] text-muted-foreground">{a.actor}</span>
                     {a.documentId && <span className="text-[11px] text-primary hidden sm:inline">→ open file</span>}
                   </div>

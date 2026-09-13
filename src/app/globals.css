@@ -151,76 +151,119 @@
   html {
     -webkit-text-size-adjust: 100%;
     text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-variant-ligatures: common-ligatures;
   }
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: "cv11", "ss01";
+    font-feature-settings: "cv11", "ss01", "tnum" 0;
+    letter-spacing: -0.011em;
   }
-  /* Subtle dotted grid backdrop for the workspace area */
+  ::selection {
+    background: oklch(0.52 0.13 162 / 0.18);
+  }
+  /* Enterprise surface treatments */
   .grid-backdrop {
     background-image:
-      radial-gradient(circle at 1px 1px, oklch(0.85 0.004 150 / 0.6) 1px, transparent 0);
-    background-size: 22px 22px;
+      radial-gradient(circle at 1px 1px, oklch(0.88 0.004 150 / 0.45) 1px, transparent 0);
+    background-size: 24px 24px;
   }
   .dark .grid-backdrop {
     background-image:
-      radial-gradient(circle at 1px 1px, oklch(1 0 0 / 0.05) 1px, transparent 0);
+      radial-gradient(circle at 1px 1px, oklch(1 0 0 / 0.04) 1px, transparent 0);
   }
-  /* Thin custom scrollbars for dense tables */
+  .surface-raised {
+    box-shadow:
+      0 1px 2px oklch(0 0 0 / 0.04),
+      0 4px 12px oklch(0 0 0 / 0.04);
+  }
+  .hairline-top {
+    position: relative;
+  }
+  .hairline-top::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, oklch(0 0 0 / 0.06), transparent);
+    pointer-events: none;
+  }
+  .dark .hairline-top::before {
+    background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.06), transparent);
+  }
+  /* Dense, thin scrollbars for tables */
   .scroll-thin {
     scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
+    scrollbar-color: oklch(0 0 0 / 0.16) transparent;
   }
   .scroll-thin::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
   }
   .scroll-thin::-webkit-scrollbar-thumb {
-    background-color: var(--border);
+    background-color: oklch(0 0 0 / 0.16);
     border-radius: 999px;
+    border: 1px solid transparent;
+    background-clip: content-box;
   }
   .scroll-thin::-webkit-scrollbar-track {
     background: transparent;
   }
-  /* Animated striped "scanning" overlay used during security scans */
+  .dark .scroll-thin {
+    scrollbar-color: oklch(1 0 0 / 0.14) transparent;
+  }
+  .dark .scroll-thin::-webkit-scrollbar-thumb {
+    background-color: oklch(1 0 0 / 0.14);
+  }
+  /* Scanning animation — tighter, less playful */
   .scan-stripes {
     background-image: repeating-linear-gradient(
       45deg,
-      oklch(0.6 0.13 162 / 0.12),
-      oklch(0.6 0.13 162 / 0.12) 10px,
-      transparent 10px,
-      transparent 20px
+      oklch(0.52 0.13 162 / 0.10),
+      oklch(0.52 0.13 162 / 0.10) 8px,
+      transparent 8px,
+      transparent 16px
     );
     background-size: 200% 100%;
-    animation: scan-move 1.2s linear infinite;
+    animation: scan-move 1s linear infinite;
   }
   @keyframes scan-move {
     from { background-position: 0 0; }
-    to { background-position: 28px 0; }
+    to { background-position: 22px 0; }
   }
-  /* Diff highlight */
+  /* Diff — more restrained, enterprise */
   .diff-add {
-    background-color: oklch(0.6 0.13 162 / 0.22);
-    color: oklch(0.35 0.14 162);
-    border-radius: 2px;
-    padding: 0 1px;
+    background-color: oklch(0.52 0.13 162 / 0.14);
+    color: oklch(0.32 0.12 162);
+    border: 1px solid oklch(0.52 0.13 162 / 0.18);
+    border-radius: 3px;
+    padding: 0 2px;
   }
   .diff-del {
-    background-color: oklch(0.6 0.2 27 / 0.20);
-    color: oklch(0.42 0.2 27);
+    background-color: oklch(0.55 0.22 27 / 0.10);
+    color: oklch(0.4 0.18 27);
+    border: 1px solid oklch(0.55 0.22 27 / 0.16);
     text-decoration: line-through;
-    text-decoration-color: oklch(0.55 0.2 27 / 0.85);
-    text-decoration-thickness: 1.5px;
-    border-radius: 2px;
-    padding: 0 1px;
+    text-decoration-color: oklch(0.55 0.22 27 / 0.65);
+    text-decoration-thickness: 1px;
+    border-radius: 3px;
+    padding: 0 2px;
   }
   .dark .diff-add {
-    background-color: oklch(0.62 0.14 162 / 0.28);
-    color: oklch(0.82 0.14 162);
+    background-color: oklch(0.62 0.14 162 / 0.18);
+    color: oklch(0.8 0.12 162);
+    border-color: oklch(0.62 0.14 162 / 0.22);
   }
   .dark .diff-del {
-    background-color: oklch(0.65 0.2 27 / 0.26);
-    color: oklch(0.82 0.18 27);
-    text-decoration-color: oklch(0.75 0.2 27 / 0.9);
+    background-color: oklch(0.65 0.2 27 / 0.14);
+    color: oklch(0.8 0.16 27);
+    border-color: oklch(0.65 0.2 27 / 0.18);
+    text-decoration-color: oklch(0.75 0.2 27 / 0.7);
+  }
+  /* Focus ring — enterprise subtle */
+  :focus-visible {
+    outline: 2px solid oklch(0.52 0.13 162 / 0.5);
+    outline-offset: 2px;
   }
 }

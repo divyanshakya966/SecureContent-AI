@@ -32,7 +32,7 @@ const ALLOWED_MIME_EXACT = new Set([
 ]);
 
 function isAllowedMime(mime: string): boolean {
-  if (!mime) return true; // fallback for missing mime
+  if (!mime) return false; // missing mime → treat as unverified; caller will warn
   const lower = mime.toLowerCase();
   if (ALLOWED_MIME_EXACT.has(lower)) return true;
   return ALLOWED_MIME_PREFIXES.some((p) => lower.startsWith(p));
@@ -53,19 +53,27 @@ function textStats(text: string) {
 async function tryDoclingWorker(buffer: Buffer, filename: string, mime: string): Promise<string | null> {
   const url = process.env.DOCLING_WORKER_URL;
   if (!url) return null;
+  // Basic SSRF guard: only allow http(s) to loopback / local service names
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) return null;
+  } catch {
+    return null;
+  }
   try {
     const form = new FormData();
-    // @ts-ignore — Node >=18 has global Blob/FormData
     const blob = new Blob([new Uint8Array(buffer)], { type: mime });
     form.append("file", blob, filename);
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), 15000);
-    const res = await fetch(url, { method: "POST", body: form as any, signal: controller.signal });
+    const res = await fetch(url, { method: "POST", body: form as unknown as BodyInit, signal: controller.signal });
     clearTimeout(t);
     if (!res.ok) return null;
-    const j = await res.json().catch(() => null) as any;
-    if (j && typeof j.text === "string" && j.text.trim()) return j.text as string;
-    if (typeof j === "string" && j.trim()) return j as string;
+    const j: unknown = await res.json().catch(() => null);
+    if (j && typeof j === "object" && "text" in j && typeof (j as { text: unknown }).text === "string" && (j as { text: string }).text.trim()) {
+      return (j as { text: string }).text;
+    }
+    if (typeof j === "string" && j.trim()) return j;
     return null;
   } catch {
     return null;
@@ -75,17 +83,19 @@ async function tryDoclingWorker(buffer: Buffer, filename: string, mime: string):
 async function parsePdf(buffer: Buffer): Promise<{ text: string; warnings: string[] }> {
   const warnings: string[] = [];
   try {
-    // pdf-parse is CommonJS; dynamic require avoids ESM interop issues in Next.js
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse: (b: Buffer) => Promise<{ text: string; numpages: number; info?: unknown }> = require("pdf-parse");
+    // pdf-parse is CommonJS; dynamic import avoids bundler interop issues in Next.js
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mod: any = await import("pdf-parse");
+    const pdfParse = (mod.default ?? mod) as (b: Buffer) => Promise<{ text: string; numpages: number; info?: unknown }>;
     const data = await pdfParse(buffer);
     if (!data.text || !data.text.trim()) {
       warnings.push("PDF parsed but no extractable text found — likely a scanned image. Run OCR or the Docling worker for scanned PDFs.");
       return { text: "", warnings };
     }
     return { text: data.text, warnings };
-  } catch (e: any) {
-    warnings.push(`PDF parsing failed (${e?.message ?? "unknown"}). Install 'pdf-parse' or use the Docling worker for complex PDFs.`);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "unknown";
+    warnings.push(`PDF parsing failed (${msg}). Install 'pdf-parse' or use the Docling worker for complex PDFs.`);
     // Heuristic: try to pull literal strings from the buffer (BT/ET blocks)
     const raw = buffer.toString("utf8");
     const candidates = [...raw.matchAll(/\(([^)]{3,})\)/g)].map((m) => m[1]).join(" ");
@@ -100,20 +110,22 @@ async function parsePdf(buffer: Buffer): Promise<{ text: string; warnings: strin
 async function parseDocx(buffer: Buffer): Promise<{ text: string; warnings: string[] }> {
   const warnings: string[] = [];
   try {
-    // mammoth is CommonJS
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mammoth = require("mammoth");
-    const result = await mammoth.extractRawText({ buffer });
+    const mammoth = await import("mammoth");
+    const extractor = (mammoth as unknown as { extractRawText: (o: { buffer: Buffer }) => Promise<{ value: string; messages?: { message: string }[] }> }).extractRawText
+      ?? (mammoth as unknown as { default: { extractRawText: (o: { buffer: Buffer }) => Promise<{ value: string; messages?: { message: string }[] }> } }).default?.extractRawText;
+    if (!extractor) throw new Error("mammoth extractRawText not found");
+    const result = await extractor({ buffer });
     if (!result.value || !result.value.trim()) {
       warnings.push("DOCX parsed but no text extracted.");
       return { text: "", warnings };
     }
     if (result.messages?.length) {
-      warnings.push(`DOCX parser messages: ${result.messages.slice(0, 2).map((m: any) => m.message).join("; ")}`);
+      warnings.push(`DOCX parser messages: ${result.messages.slice(0, 2).map((m) => m.message).join("; ")}`);
     }
     return { text: result.value, warnings };
-  } catch (e: any) {
-    warnings.push(`DOCX parsing failed (${e?.message ?? "unknown"}). Ensure 'mammoth' is installed.`);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "unknown";
+    warnings.push(`DOCX parsing failed (${msg}). Ensure 'mammoth' is installed.`);
     return { text: "", warnings };
   }
 }
@@ -131,7 +143,7 @@ export async function parseDocument(opts: {
   buffer: Buffer;
 }): Promise<ParsedDocument> {
   const { filename, mimeType } = opts;
-  let buffer = opts.buffer;
+  const buffer = opts.buffer;
   const lowerName = filename.toLowerCase();
   const ext = lowerName.split(".").pop() ?? "";
   const mime = (mimeType || "").toLowerCase();
