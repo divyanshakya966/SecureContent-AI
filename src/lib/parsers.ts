@@ -201,10 +201,16 @@ export async function parseDocument(opts: {
     text = decodeTextBuffer(buffer);
     const normalized = normalizeIngestedText(text);
     if (normalized.length > 0) text = normalized;
-    // If the decoded text is mostly non-printable, it was likely binary mislabeled as text
-    const printable = text.replace(/[^\x20-\x7E\x0A\x0D\u00A0-\u024F\u0400-\u04FF\u0900-\u097F\u0600-\u06FF\u4E00-\u9FFF]/g, "").length;
-    if (printable / Math.max(1, text.length) < 0.72) {
-      warnings.push("File appears to be binary but was treated as text — results may be incomplete. Try uploading as PDF/DOCX.");
+    // Detect binary masquerading as text (e.g., compressed stream decoded as printable gibberish "PJYI~A-2…")
+    const { isProbablyBinaryText: isBinary } = await import("@/lib/text");
+    if (isBinary(text)) {
+      warnings.push("File appears to be binary or encoded data but was treated as text — no readable text extracted. Try PDF/DOCX or enable the Docling worker.");
+      text = "";
+    } else {
+      const printable = text.replace(/[^\x20-\x7E\x0A\x0D\u00A0-\u024F\u0400-\u04FF\u0900-\u097F\u0600-\u06FF\u4E00-\u9FFF]/g, "").length;
+      if (printable / Math.max(1, text.length) < 0.72) {
+        warnings.push("File appears to be binary but was treated as text — results may be incomplete. Try uploading as PDF/DOCX.");
+      }
     }
     parser = "utf8";
   }

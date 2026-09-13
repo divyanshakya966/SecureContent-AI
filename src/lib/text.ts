@@ -58,13 +58,33 @@ export function sanitizeForDisplay(input: string, maxChars = 200_000): string {
 }
 
 export function isProbablyBinaryText(s: string): boolean {
-  if (!s) return false;
+  if (!s || s.trim().length < 20) return false;
+  // Allow-list: documents intentionally containing secrets/injection payloads
+  if (/AKIA[0-9A-Z]{12,}|ghp_[A-Za-z0-9]{10,}|BEGIN.*PRIVATE KEY|eyJ[A-Za-z0-9_-]{8,}\.eyJ/.test(s)) return false;
+
   const sample = s.slice(0, 4000);
-  // Count printable vs total (allow \n \r \t)
   const printable = sample.replace(/[^\x20-\x7E\x0A\x0D\x09\xA0-\u024F\u0400-\u04FF\u0900-\u097F\u0600-\u06FF\u4E00-\u9FFF]/g, "").length;
-  const ratio = printable / Math.max(1, sample.length);
-  // If ratio < 0.78 and contains many � or control remnants, treat as binary
-  return ratio < 0.78;
+  const printableRatio = printable / Math.max(1, sample.length);
+  if (printableRatio < 0.72) return true;
+
+  const spaces = (sample.match(/ /g) || []).length;
+  const spaceRatio = spaces / Math.max(1, sample.length);
+  const words = sample.trim().split(/\s+/).filter(Boolean);
+  const avgWordLen = words.length ? sample.length / words.length : 0;
+  const hasCommonWord = /\b(the|and|or|is|to|of|in|for|with|on|as|by|at|from|this|that|with|was|are|document|report|incident|security)\b/i.test(sample);
+
+  // Few words but huge avg length and no spaces → compressed/blob fragment
+  if (words.length < 4) {
+    if (avgWordLen > 15 && spaceRatio < 0.05) return true;
+    if (sample.length > 60 && spaceRatio < 0.03) return true;
+    return false;
+  }
+
+  if (spaceRatio < 0.06 && avgWordLen > 12) return true;
+  if (spaceRatio < 0.04) return true;
+  if (avgWordLen > 18) return true;
+  if (!hasCommonWord && words.length > 5 && spaceRatio < 0.08) return true;
+  return false;
 }
 
 export function safeTruncate(s: string, n: number): string {
