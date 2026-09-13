@@ -32,6 +32,7 @@ import { Stepper, type StepDef } from "@/components/secure/stepper";
 import {
   riskColor, riskLabel, formatRelativeTime, formatBytes, CATEGORY_META,
 } from "@/lib/display";
+import { sanitizeForDisplay } from "@/lib/text";
 import { cn } from "@/lib/utils";
 
 type Tab = "overview" | "findings" | "diff" | "transform" | "report" | "intelligence" | "history";
@@ -540,7 +541,7 @@ function TransformTab({ doc, busy, onTransform }: {
           </div>
           <div className="mt-3 grid gap-4 lg:grid-cols-3">
             <div className="lg:col-span-2 overflow-auto scroll-thin rounded-lg border border-border bg-muted/30 p-4 max-h-[28rem]">
-              <pre className="m-0 whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{latest.outputContent}</pre>
+              <pre className="m-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono text-xs leading-relaxed">{sanitizeForDisplay(latest.outputContent)}</pre>
             </div>
             <div>
               <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Grounding citations</h4>
@@ -682,8 +683,8 @@ function ReportTab({ documentId }: { documentId: string }) {
       <Card className="p-5">
         <h3 className="text-sm font-semibold">Sanitized preview</h3>
         <p className="text-xs text-muted-foreground">First 600 characters of the working copy sent to the model</p>
-        <pre className="mt-3 max-h-64 overflow-auto scroll-thin whitespace-pre-wrap break-words rounded-lg border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed">
-          {report.sanitizedPreview}
+        <pre className="mt-3 max-h-64 overflow-auto scroll-thin whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-lg border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed">
+          {sanitizeForDisplay(report.sanitizedPreview)}
         </pre>
       </Card>
     </div>

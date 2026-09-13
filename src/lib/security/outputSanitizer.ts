@@ -88,5 +88,13 @@ export function sanitizeOutputHtml(content: string): OutputSanitizeResult {
     out = out.replace(commentRe, "");
   }
 
+  // Strip control / zero-width / replacement chars that render as obscure boxes
+  const beforeCtrl = out.length;
+  out = out.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u200B-\u200D\uFEFF\uFFFD]/g, "");
+  if (out.length !== beforeCtrl) {
+    removed.push({ type: "control_chars", count: beforeCtrl - out.length });
+    warnings.push(`Removed ${beforeCtrl - out.length} control/zero-width character(s) from generated output.`);
+  }
+
   return { sanitized: out, removed, warnings };
 }

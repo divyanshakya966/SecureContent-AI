@@ -4,6 +4,7 @@
 // Optional Docling worker (Python) is proxied when DOCLING_WORKER_URL is set.
 
 import crypto from "crypto";
+import { normalizeIngestedText } from "@/lib/text";
 
 export interface ParsedDocument {
   text: string;
@@ -92,17 +93,12 @@ async function parsePdf(buffer: Buffer): Promise<{ text: string; warnings: strin
       warnings.push("PDF parsed but no extractable text found — likely a scanned image. Run OCR or the Docling worker for scanned PDFs.");
       return { text: "", warnings };
     }
-    return { text: data.text, warnings };
+    return { text: normalizeIngestedText(data.text), warnings };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "unknown";
     warnings.push(`PDF parsing failed (${msg}). Install 'pdf-parse' or use the Docling worker for complex PDFs.`);
-    // Heuristic: try to pull literal strings from the buffer (BT/ET blocks)
-    const raw = buffer.toString("utf8");
-    const candidates = [...raw.matchAll(/\(([^)]{3,})\)/g)].map((m) => m[1]).join(" ");
-    if (candidates.trim().length > 40) {
-      warnings.push("Heuristic PDF text fallback applied — results may be incomplete.");
-      return { text: candidates.slice(0, 20000), warnings };
-    }
+    // Heuristic fallback removed — previous version decoded binary PDF as UTF-8 and surfaced
+    // obscure control characters. Return empty and let the caller surface a clean warning.
     return { text: "", warnings };
   }
 }
@@ -122,7 +118,7 @@ async function parseDocx(buffer: Buffer): Promise<{ text: string; warnings: stri
     if (result.messages?.length) {
       warnings.push(`DOCX parser messages: ${result.messages.slice(0, 2).map((m) => m.message).join("; ")}`);
     }
-    return { text: result.value, warnings };
+    return { text: normalizeIngestedText(result.value), warnings };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "unknown";
     warnings.push(`DOCX parsing failed (${msg}). Ensure 'mammoth' is installed.`);
@@ -162,11 +158,12 @@ export async function parseDocument(opts: {
   if (isBinary && process.env.DOCLING_WORKER_URL) {
     const doclingText = await tryDoclingWorker(buffer, filename, mimeType);
     if (doclingText) {
-      const stats = textStats(doclingText);
+      const clean = normalizeIngestedText(doclingText);
+      const stats = textStats(clean);
       return {
-        text: doclingText,
+        text: clean,
         warnings: ["Parsed via Docling worker (Python)."],
-        sha256: sha256(doclingText),
+        sha256: sha256(clean),
         sourceFormat: mime || ext,
         pages: stats.pages,
         sections: stats.sections,
@@ -192,7 +189,7 @@ export async function parseDocument(opts: {
     warnings.push(...r.warnings);
   } else if (ext === "pptx") {
     warnings.push("PPTX parsing is not bundled. Convert to PDF/DOCX or use the Docling worker for slide extraction.");
-    text = buffer.toString("utf8").slice(0, 20000);
+    text = "";
     parser = "pptx-placeholder";
   } else if (["png", "jpg", "jpeg", "webp", "tiff"].includes(ext) || mime.startsWith("image/")) {
     parser = "image-placeholder";
@@ -200,25 +197,25 @@ export async function parseDocument(opts: {
     text = r.text;
     warnings.push(...r.warnings);
   } else {
-    // Text-family: detect encoding heuristically; Node Buffers are UTF-8 by default
-    text = buffer.toString("utf8");
-    // If the decoded text is mostly control chars, it was likely binary mislabeled as text
-    const printable = text.replace(/[^\x20-\x7E\x0A\x0D]/g, "").length;
-    if (printable / Math.max(1, text.length) < 0.6) {
+    // Text-family: decode with encoding sniffing (utf8 -> latin1 fallback) and normalize
+    text = decodeTextBuffer(buffer);
+    const normalized = normalizeIngestedText(text);
+    if (normalized.length > 0) text = normalized;
+    // If the decoded text is mostly non-printable, it was likely binary mislabeled as text
+    const printable = text.replace(/[^\x20-\x7E\x0A\x0D\u00A0-\u024F\u0400-\u04FF\u0900-\u097F\u0600-\u06FF\u4E00-\u9FFF]/g, "").length;
+    if (printable / Math.max(1, text.length) < 0.72) {
       warnings.push("File appears to be binary but was treated as text — results may be incomplete. Try uploading as PDF/DOCX.");
     }
     parser = "utf8";
   }
 
-  // Final fallback: if we got almost nothing, surface the raw snippet
+  // Normalize all parser outputs to strip control/zero-width/replacement chars
+  text = normalizeIngestedText(text);
+
+  // Final fallback: if we got almost nothing, do NOT surface raw binary snippet
   if (!text.trim()) {
-    const snippet = buffer.toString("utf8").slice(0, 2000).replace(/\0/g, "").trim();
-    if (snippet) {
-      warnings.push("No structured parser output; falling back to raw text snippet.");
-      text = snippet;
-    } else {
-      warnings.push("No extractable text found in file.");
-    }
+    warnings.push("No extractable text found in file. For scanned PDFs/images, enable the Docling worker.");
+    text = "";
   }
 
   const stats = textStats(text);
@@ -233,4 +230,23 @@ export async function parseDocument(opts: {
     charCount: stats.charCount,
     metadata: { parser, filename, mimeType, ext, byteLength: buffer.byteLength },
   };
+}
+
+function decodeTextBuffer(buf: Buffer): string {
+  // Try UTF-8 first; if it yields many replacement chars or invalid sequences, fall back
+  const utf8 = buf.toString("utf8");
+  const replacements = (utf8.match(/\uFFFD/g) || []).length;
+  if (replacements > utf8.length * 0.02) {
+    // Fallback to latin1 for legacy files (common on Windows)
+    try {
+      const latin = buf.toString("latin1");
+      // If latin1 is more printable, use it
+      const uPrint = utf8.replace(/[^\x20-\x7E\x0A\x0D]/g, "").length;
+      const lPrint = latin.replace(/[^\x20-\x7E\x0A\x0D]/g, "").length;
+      if (lPrint > uPrint) return latin;
+    } catch {
+      // ignore
+    }
+  }
+  return utf8;
 }

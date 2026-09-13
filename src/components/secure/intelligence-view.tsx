@@ -21,20 +21,18 @@ const TACTIC_COLOR: Record<string, string> = {
 
 function EmptyIntelligence({ onIngest }: { onIngest: () => void }) {
   return (
-    <Card className="p-8 text-center border-dashed bg-muted/20">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-dashed bg-background">
-        <Inbox className="h-6 w-6 text-muted-foreground" />
+    <Card className="p-8 text-center border-dashed bg-card">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border bg-muted">
+        <Inbox className="h-6 w-6 text-muted-foreground/70" />
       </div>
-      <div className="mt-3 text-sm font-semibold">No intelligence collected</div>
+      <div className="mt-3 text-sm font-semibold tracking-tight">No intelligence collected</div>
       <p className="mx-auto mt-1 max-w-[48ch] text-xs leading-relaxed text-muted-foreground">
-        Ingest a document to collect information. Entities, IOCs, TTPs (MITRE ATT&amp;CK), risks and key findings are extracted automatically through the full pipeline — scan → intelligence extraction — and will populate this workspace after processing.
+        Ingest a document to collect information. Entities, IOCs, TTPs, risks and key findings are extracted automatically after scan and will populate this workspace.
       </p>
       <Button size="sm" className="mt-4" onClick={onIngest}>
         Ingest document
       </Button>
-      <p className="mt-3 text-[11px] text-muted-foreground">
-        Dashboard metrics remain empty until you process a document manually. No mock data is shown.
-      </p>
+      <p className="mt-3 text-[11px] text-muted-foreground">No mock data is shown until genuine pipeline results.</p>
     </Card>
   );
 }

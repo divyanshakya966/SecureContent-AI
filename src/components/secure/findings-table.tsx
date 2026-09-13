@@ -1,6 +1,7 @@
 "use client";
 
 import type { Finding } from "@/types";
+import { sanitizeForDisplay, safeTruncate } from "@/lib/text";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -50,12 +51,12 @@ export function FindingsTable({ findings, emptyHint = "No findings.", maxHeight 
               <TableCell>
                 <div className="space-y-1">
                   <div className="font-mono text-[11px] text-foreground/80 break-all">
-                    <span className="diff-del rounded px-0.5">{truncate(f.matchedText, 80)}</span>
+                    <span className="diff-del rounded px-0.5">{safeTruncate(sanitizeForDisplay(f.matchedText), 80)}</span>
                   </div>
                   <div className="font-mono text-[11px] break-all">
-                    <span className="diff-add rounded px-0.5">{f.maskedText}</span>
+                    <span className="diff-add rounded px-0.5">{sanitizeForDisplay(f.maskedText)}</span>
                   </div>
-                  <p className="text-[11px] text-muted-foreground">{f.reason}</p>
+                  <p className="text-[11px] text-muted-foreground">{sanitizeForDisplay(f.reason)}</p>
                 </div>
               </TableCell>
               <TableCell className="hidden lg:table-cell">
@@ -69,7 +70,4 @@ export function FindingsTable({ findings, emptyHint = "No findings.", maxHeight 
   );
 }
 
-function truncate(s: string, n: number) {
-  if (s.length <= n) return s;
-  return s.slice(0, n - 1) + "…";
-}
+// local truncate deprecated — use safeTruncate from @/lib/text

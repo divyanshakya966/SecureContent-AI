@@ -23,31 +23,116 @@ Ingest → Scan → Classify → Sanitize → Transform → Validate → Deliver
 - **Output validation** — DLP rescan, grounding check, auto-repair
 - **Operations** — Dashboard, documents, intelligence (entities / IOCs / TTPs), policy comparison, audit trail
 
-## Quick Start
+## Run Locally (Perfect Setup)
 
-**Requirements:** Node 20+, SQLite, Bun 1.x
+**Prerequisites:** Node 20+ or Bun 1.x, SQLite (bundled via Prisma), Git
+
+**1) Clone & install**
 
 ```bash
-git clone <repo> SecureContent-AI && cd SecureContent-AI
+git clone https://github.com/divyanshakya966/SecureContent-AI.git
+cd SecureContent-AI
+# automated (installs Bun if missing, installs deps, creates .env, pushes DB)
 ./scripts/setup.sh
-bun run dev          # http://localhost:3000
-curl -X POST http://localhost:3000/api/v1/seed   # optional sample data
+
+# manual alternative
+bun install
+cp .env.example .env   # then edit .env — see Configuration below
+bunx prisma generate
+bunx prisma db push --accept-data-loss
 ```
 
-**Windows:** `.\scripts\setup.ps1` or `scripts\setup.bat`
+**2) Configure `.env`**
 
-**Docker:**
+```env
+DATABASE_URL="file:./prisma/dev.db"   # local SQLite; for Postgres use postgresql://...
+GEMINI_API_KEY=""                      # https://aistudio.google.com/apikey
+GROQ_API_KEY=""                        # https://console.groq.com/keys (fallback)
+GEMINI_MODEL="gemini-2.0-flash"
+GROQ_MODEL="openai/gpt-oss-120b"
+# optional OCR
+# DOCLING_WORKER_URL="http://localhost:8001/parse"
+```
+
+> Keys are server-only (`src/lib/ai/transform.ts` runtime guard). Without keys the app uses a deterministic offline mock that still exercises DLP/grounding.
+
+**3) Develop**
 
 ```bash
-docker compose up --build              # app + caddy (:3000, :81)
-docker compose --profile docling up    # + Python OCR worker (:8001)
+bun run dev          # http://localhost:3000 — Next.js with proxy + security headers
+# in another terminal, ingest synthetic data to populate every view
+curl -X POST http://localhost:3000/api/v1/seed
 ```
 
-**Verify:**
+**4) Verify (local CI)**
 
 ```bash
-bun run verify   # lint + typecheck + test + build
+bun run verify   # lint + typecheck + vitest (64 tests) + next build
+bun run benchmark
 ```
+
+**5) Production build locally**
+
+```bash
+bun run build
+NODE_ENV=production bun .next/standalone/server.js  # standalone output, no Bun needed
+```
+
+**Windows:** `.\scripts\setup.ps1` or `scripts\setup.bat` (same steps).
+
+---
+
+## Run on Cloud
+
+### Option A — Docker (recommended for any VM / VPS / EC2 / Azure VM)
+
+```bash
+# on the cloud machine with Docker & Docker Compose
+git clone https://github.com/divyanshakya966/SecureContent-AI.git && cd SecureContent-AI
+
+# create env file on the host (never commit)
+cat > .env <<'EOF'
+DATABASE_URL="file:/app/db/custom.db"
+GEMINI_API_KEY="your-gemini-key"
+GROQ_API_KEY="your-groq-key"
+EOF
+
+docker compose up --build -d            # app :3000 + caddy :81
+docker compose logs -f app
+# seed once (optional)
+curl -X POST http://<host>:3000/api/v1/seed
+```
+
+Caddy terminates as reverse-proxy on `:81` with HSTS/CSP. SQLite persists in Docker volume `db_data` (`/app/db/custom.db`). For horizontal scale, replace `DATABASE_URL` with Postgres and add external Redis for rate limiting (swap in `src/lib/validation/rateLimit.ts`).
+
+Optional Docling OCR worker:
+
+```bash
+docker compose --profile docling up --build -d   # adds Python worker :8001, app auto-proxies via DOCLING_WORKER_URL
+```
+
+### Option B — Vercel / Render / Fly.io (Next.js standalone)
+
+1. Push the repo to GitHub.
+2. Import project in Vercel/Render.
+3. **Build command:** `bun run build`  **Output:** `.next/standalone` (set via `next.config.ts` `output: "standalone"`)
+4. **Env vars:** `DATABASE_URL` (use Neon/Supabase Postgres for cloud), `GEMINI_API_KEY`, `GROQ_API_KEY`
+5. **Deploy** — `proxy.ts` headers and `next.config` CSP apply automatically. For SQLite on ephemeral FS, switch to Postgres before deploying.
+
+### Option C — Bare VM without Docker
+
+```bash
+curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH"
+bun install --frozen-lockfile
+bunx prisma generate
+DATABASE_URL="file:./prisma/dev.db" bunx prisma db push
+bun run build
+NODE_ENV=production DATABASE_URL="file:./prisma/dev.db" node .next/standalone/server.js
+```
+
+**Troubleshooting ingest obscure characters:** fixed in `src/lib/parsers.ts` + `src/lib/text.ts` — binary PPTX/PDF fallback no longer decodes as UTF-8, all parser outputs are NFC-normalized and stripped of control/zero-width/� chars, plus `sanitizeForDisplay` on every `<pre>`/table cell with `[overflow-wrap:anywhere]`. If a file still shows empty, the UI now surfaces `No extractable text — enable Docling` instead of boxes.
+
+**Verify cloud:** `curl http://<host>/api/v1/stats` should return `stats.totalDocuments`.
 
 ## Configuration
 

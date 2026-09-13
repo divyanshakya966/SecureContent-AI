@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { sanitizeForDisplay } from "@/lib/text";
 
 interface DiffViewProps {
   before: string;
@@ -13,7 +14,9 @@ interface DiffViewProps {
 // present in `before` but not in `after` as deletions, and new spans as
 // additions. Good enough to visualize sanitization redactions visually.
 export function DiffView({ before, after, beforeLabel = "Raw input", afterLabel = "Sanitized copy" }: DiffViewProps) {
-  const diff = useMemo(() => computeDiff(before, after), [before, after]);
+  const cleanBefore = useMemo(() => sanitizeForDisplay(before), [before]);
+  const cleanAfter = useMemo(() => sanitizeForDisplay(after), [after]);
+  const diff = useMemo(() => computeDiff(cleanBefore, cleanAfter), [cleanBefore, cleanAfter]);
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -38,7 +41,7 @@ function DiffColumn({
           {segments.filter((s) => s.changed).length} changed
         </span>
       </div>
-      <pre className="m-0 max-h-[28rem] overflow-auto scroll-thin whitespace-pre-wrap break-words p-3 font-mono text-[11px] leading-relaxed">
+      <pre className="m-0 max-h-[28rem] overflow-auto scroll-thin whitespace-pre-wrap break-words [overflow-wrap:anywhere] p-3 font-mono text-[11px] leading-relaxed">
         {segments.map((s, i) => (
           <span key={i} className={s.changed ? (tone === "add" ? "diff-add rounded px-0.5" : "diff-del rounded px-0.5") : ""}>
             {s.text}

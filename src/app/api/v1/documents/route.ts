@@ -102,9 +102,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ document: serializeDocument(doc) }, { status: 201, headers: rateLimitHeaders(rl, 20) });
       }
       if (title) {
-        content = (form.get("content") as string) || "";
+        const rawContent = (form.get("content") as string) || "";
+        const { normalizeIngestedText: normalizeForm } = await import("@/lib/text");
+        content = normalizeForm(rawContent);
         if (!content.trim()) {
-          return NextResponse.json({ error: "Content is required." }, { status: 400, headers: rateLimitHeaders(rl, 20) });
+          return NextResponse.json({ error: "Content is empty after sanitization." }, { status: 400, headers: rateLimitHeaders(rl, 20) });
         }
         filename = title;
         const doc = await createDocument({ filename, mimeType, content, sourceKind, title });
@@ -136,7 +138,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (typeof p.content === "string" && p.content.trim()) {
-      content = p.content;
+      const { normalizeIngestedText } = await import("@/lib/text");
+      content = normalizeIngestedText(p.content);
+      if (!content.trim()) {
+        return NextResponse.json({ error: "Content is empty after sanitization — check for binary or unsupported encoding." }, { status: 400, headers: rateLimitHeaders(rl, 20) });
+      }
       filename = p.title || "pasted-document.txt";
       mimeType = "text/plain";
       sourceKind = "PASTE";
@@ -163,7 +169,13 @@ async function createDocument(opts: {
   parsedMeta?: Record<string, unknown>;
   warnings?: string[];
 }) {
-  const { filename, mimeType, content, sourceKind } = opts;
+  const { normalizeIngestedText: normalizeCreate } = await import("@/lib/text");
+  const rawInput = opts.content;
+  const content = normalizeCreate(rawInput);
+  if (!content.trim()) {
+    throw new Error("Document is empty after text normalization — upload a text-based file or enable OCR.");
+  }
+  const { filename, mimeType, sourceKind } = opts;
   const title = opts.title || filename.replace(/\.[^.]+$/, "");
 
   const metaFromParser = opts.parsedMeta;
