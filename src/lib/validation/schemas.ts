@@ -24,14 +24,51 @@ export const SanitizeSchema = z.object({
   profile: PolicyNameEnum.optional(),
 });
 
+const OutputTypeEnum = z.enum([
+  "EXECUTIVE_SUMMARY",
+  "FAQ",
+  "TECHNICAL_REPORT",
+  "SLIDE_OUTLINE",
+  "EMAIL_DRAFT",
+  "PRESS_RELEASE",
+  "SOCIAL_POST",
+  "NEWSLETTER",
+  "POLICY_BRIEF",
+  "TRAINING_GUIDE",
+  "INCIDENT_SUMMARY",
+  "RESEARCH_DIGEST",
+  "ANNOUNCEMENT",
+  "BLOG_POST",
+  "MEETING_MINUTES",
+]);
+
 export const TransformSchema = z.object({
   profile: z.enum(["PUBLIC_RELEASE", "INTERNAL_SUMMARY", "EXECUTIVE_BRIEF", "HR_SAFE", "SECURITY_INCIDENT"]).optional().default("PUBLIC_RELEASE"),
-  outputType: z.enum(["EXECUTIVE_SUMMARY", "FAQ", "TECHNICAL_REPORT", "SLIDE_OUTLINE", "EMAIL_DRAFT"]).optional().default("EXECUTIVE_SUMMARY"),
+  outputType: OutputTypeEnum.optional().default("EXECUTIVE_SUMMARY"),
+  // Batch support — either single outputType or array
+  outputTypes: z.array(OutputTypeEnum).min(1).max(8).optional(),
+  // Industry-grade generation controls
+  tone: z.enum(["formal", "professional", "technical", "friendly", "persuasive", "neutral", "concise"]).optional().default("professional"),
+  language: z.enum(["en", "es", "fr", "de", "ja", "zh", "hi", "pt"]).optional().default("en"),
+  detailLevel: z.enum(["brief", "standard", "detailed", "comprehensive"]).optional().default("standard"),
+  objective: z.enum(["inform", "summarize", "persuade", "educate", "announce", "report", "analyze", "comply"]).optional().default("inform"),
+  style: z.enum(["narrative", "bullet", "structured", "conversational", "formal", "executive", "creative"]).optional().default("structured"),
+  batchId: z.string().max(64).optional(),
+});
+
+export const BatchTransformSchema = z.object({
+  profile: z.enum(["PUBLIC_RELEASE", "INTERNAL_SUMMARY", "EXECUTIVE_BRIEF", "HR_SAFE", "SECURITY_INCIDENT"]).optional().default("PUBLIC_RELEASE"),
+  outputTypes: z.array(OutputTypeEnum).min(1).max(8),
+  tone: z.enum(["formal", "professional", "technical", "friendly", "persuasive", "neutral", "concise"]).optional().default("professional"),
+  language: z.enum(["en", "es", "fr", "de", "ja", "zh", "hi", "pt"]).optional().default("en"),
+  detailLevel: z.enum(["brief", "standard", "detailed", "comprehensive"]).optional().default("standard"),
+  objective: z.enum(["inform", "summarize", "persuade", "educate", "announce", "report", "analyze", "comply"]).optional().default("inform"),
+  style: z.enum(["narrative", "bullet", "structured", "conversational", "formal", "executive", "creative"]).optional().default("structured"),
 });
 
 export const PolicyCompareSchema = z.object({
   profiles: z.array(z.enum(["PUBLIC_RELEASE", "INTERNAL_SUMMARY", "EXECUTIVE_BRIEF", "HR_SAFE", "SECURITY_INCIDENT"])).min(1).max(5).optional().default(["PUBLIC_RELEASE", "INTERNAL_SUMMARY", "SECURITY_INCIDENT"]),
-  outputType: z.enum(["EXECUTIVE_SUMMARY", "FAQ", "TECHNICAL_REPORT", "SLIDE_OUTLINE", "EMAIL_DRAFT"]).optional().default("EXECUTIVE_SUMMARY"),
+  outputType: OutputTypeEnum.optional().default("EXECUTIVE_SUMMARY"),
 });
 
 export const IntelligenceExtractSchema = z.object({

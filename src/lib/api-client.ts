@@ -13,7 +13,23 @@ import type {
   OutputType,
   IntelligenceReport,
   PolicyCompareResult,
+  GenerationTone,
+  GenerationLanguage,
+  DetailLevel,
+  CommunicationObjective,
+  ContentStyle,
 } from "@/types";
+
+export interface TransformParams {
+  profile?: TransformationProfile;
+  outputType?: OutputType;
+  outputTypes?: OutputType[];
+  tone?: GenerationTone;
+  language?: GenerationLanguage;
+  detailLevel?: DetailLevel;
+  objective?: CommunicationObjective;
+  style?: ContentStyle;
+}
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -96,13 +112,43 @@ export const api = {
     return json<{ document: DocumentRecord; actions: unknown[]; blocked: boolean; residualRisk: number }>(r);
   },
 
-  async transformDocument(id: string, profile: TransformationProfile, outputType: OutputType) {
+  async transformDocument(
+    id: string,
+    profile: TransformationProfile,
+    outputType: OutputType,
+    params?: Omit<TransformParams, "profile" | "outputType">
+  ) {
     const r = await fetchWithTimeout(`/api/v1/documents/${id}/transform`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile, outputType }),
+      body: JSON.stringify({ profile, outputType, ...params }),
     });
-    return json<{ document: DocumentRecord; transformation: TransformationRecord; dlpReasons: string[] }>(r);
+    return json<{ document: DocumentRecord; transformation: TransformationRecord; transformations?: TransformationRecord[]; dlpReasons: string[]; batchId?: string | null }>(r);
+  },
+
+  async transformBatch(
+    id: string,
+    params: { profile?: TransformationProfile; outputTypes: OutputType[] } & Omit<TransformParams, "outputType" | "outputTypes">
+  ) {
+    const r = await fetchWithTimeout(`/api/v1/documents/${id}/transform`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    }, 30_000);
+    return json<{ document: DocumentRecord; transformations: TransformationRecord[]; dlpReasons: string[]; batchId: string }>(r);
+  },
+
+  async transformBatchDedicated(
+    id: string,
+    params: { profile?: TransformationProfile; outputTypes: OutputType[] } & Omit<TransformParams, "outputType" | "outputTypes">
+  ) {
+    // Backwards compat — batch is now handled by the main transform endpoint via outputTypes[]
+    const r = await fetchWithTimeout(`/api/v1/documents/${id}/transform`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    }, 40_000);
+    return json<{ document: DocumentRecord; transformations: TransformationRecord[]; batchId: string; dlpReasons: string[] }>(r);
   },
 
   async getSecurityReport(id: string) {

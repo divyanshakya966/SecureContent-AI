@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ClassificationBadge, StatusBadge } from "@/components/secure/badges";
-import { riskColor, riskLabel, formatRelativeTime, formatBytes, truncate } from "@/lib/display";
+import { riskColor, formatRelativeTime, formatBytes, truncate } from "@/lib/display";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 

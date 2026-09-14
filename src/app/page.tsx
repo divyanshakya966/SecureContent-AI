@@ -58,11 +58,11 @@ export default function Home() {
             <div className="flex items-center gap-3">
               <span className="font-mono font-medium">SecureContent AI</span>
               <span className="hidden sm:inline h-3 w-px bg-border" />
-              <span className="hidden sm:inline text-muted-foreground">© 2026 · SOC-2 ready pipeline</span>
+              <span className="hidden sm:inline text-muted-foreground">© 2026 · Policy-aware content security platform</span>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">
               <span className="hidden md:inline-flex items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-1 text-[11px] font-medium">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> All systems operational
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Pipeline operational
               </span>
               <a href="https://genai.owasp.org/resource/owasp-genai-llm-top-10-2026/" target="_blank" rel="noreferrer" className="hidden lg:inline hover:text-foreground transition-colors underline-offset-4 hover:underline">
                 OWASP GenAI Top 10

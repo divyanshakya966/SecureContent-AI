@@ -102,7 +102,87 @@ export type OutputType =
   | "FAQ"
   | "TECHNICAL_REPORT"
   | "SLIDE_OUTLINE"
-  | "EMAIL_DRAFT";
+  | "EMAIL_DRAFT"
+  | "PRESS_RELEASE"
+  | "SOCIAL_POST"
+  | "NEWSLETTER"
+  | "POLICY_BRIEF"
+  | "TRAINING_GUIDE"
+  | "INCIDENT_SUMMARY"
+  | "RESEARCH_DIGEST"
+  | "ANNOUNCEMENT"
+  | "BLOG_POST"
+  | "MEETING_MINUTES";
+
+export type GenerationTone =
+  | "formal"
+  | "professional"
+  | "technical"
+  | "friendly"
+  | "persuasive"
+  | "neutral"
+  | "concise";
+
+export type GenerationLanguage =
+  | "en"
+  | "es"
+  | "fr"
+  | "de"
+  | "ja"
+  | "zh"
+  | "hi"
+  | "pt";
+
+export type DetailLevel =
+  | "brief"
+  | "standard"
+  | "detailed"
+  | "comprehensive";
+
+export type CommunicationObjective =
+  | "inform"
+  | "summarize"
+  | "persuade"
+  | "educate"
+  | "announce"
+  | "report"
+  | "analyze"
+  | "comply";
+
+export type ContentStyle =
+  | "narrative"
+  | "bullet"
+  | "structured"
+  | "conversational"
+  | "formal"
+  | "executive"
+  | "creative";
+
+export interface GenerationParams {
+  tone?: GenerationTone;
+  language?: GenerationLanguage;
+  detailLevel?: DetailLevel;
+  objective?: CommunicationObjective;
+  style?: ContentStyle;
+}
+
+export const OUTPUT_TYPES: OutputType[] = [
+  "EXECUTIVE_SUMMARY",
+  "FAQ",
+  "TECHNICAL_REPORT",
+  "SLIDE_OUTLINE",
+  "EMAIL_DRAFT",
+  "PRESS_RELEASE",
+  "SOCIAL_POST",
+  "NEWSLETTER",
+  "POLICY_BRIEF",
+  "TRAINING_GUIDE",
+  "INCIDENT_SUMMARY",
+  "RESEARCH_DIGEST",
+  "ANNOUNCEMENT",
+  "BLOG_POST",
+  "MEETING_MINUTES",
+];
 
 export type ValidationStatus = "PASS" | "FAIL" | "PENDING" | "SKIPPED";
 
@@ -126,6 +206,13 @@ export interface TransformationRecord {
   leakageCount: number;
   citations: Citation[];
   createdAt: string;
+  // Generation controls (industry-grade configurable pipeline)
+  tone?: GenerationTone;
+  language?: GenerationLanguage;
+  detailLevel?: DetailLevel;
+  objective?: CommunicationObjective;
+  style?: ContentStyle;
+  batchId?: string | null;
 }
 
 export interface AuditLogEntry {

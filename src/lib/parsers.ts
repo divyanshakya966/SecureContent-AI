@@ -18,18 +18,31 @@ export interface ParsedDocument {
   metadata: Record<string, unknown>;
 }
 
-const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
-const ALLOWED_MIME_PREFIXES = ["text/", "application/json", "application/csv"];
+const MAX_BYTES_TEXT = 10 * 1024 * 1024; // 10 MB — text/docs/images
+const MAX_BYTES_MEDIA = 25 * 1024 * 1024; // 25 MB — short video/audio clips; larger files should use chunked upload
+const ALLOWED_MIME_PREFIXES = ["text/", "application/json", "application/csv", "image/", "video/", "audio/"];
 
 const ALLOWED_MIME_EXACT = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/msword",
+  "application/vnd.ms-powerpoint",
+  "text/html",
+  "text/markdown",
   "image/png",
   "image/jpeg",
   "image/webp",
   "image/tiff",
+  "image/svg+xml",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-msvideo",
+  "audio/mpeg",
+  "audio/wav",
+  "audio/webm",
+  "audio/ogg",
 ]);
 
 function isAllowedMime(mime: string): boolean {
@@ -128,8 +141,15 @@ async function parseDocx(buffer: Buffer): Promise<{ text: string; warnings: stri
 
 function parseImagePlaceholder(filename: string): { text: string; warnings: string[] } {
   return {
-    text: `[Image content placeholder — ${filename}]\nThis image was not OCR'd locally. For scanned documents, run the optional Docling worker (Python) or enable Tesseract.js. Upload a text-based PDF/DOCX/TXT for full local parsing.`,
+    text: `[Image content placeholder — ${filename}]\nThis image was not OCR'd locally. For scanned documents, run the optional Docling worker (Python) or enable Tesseract.js. Upload a text-based PDF/DOCX/TXT for full local parsing.\n\nTo enable: set DOCLING_WORKER_URL=http://localhost:8001/parse and run mini-services/docling-worker, or integrate a vision model via the transform pipeline by pasting the image description as contextual information.`,
     warnings: ["Image OCR not bundled by default to keep the app lightweight. See docs/ingestion.md for enabling Docling or Tesseract."],
+  };
+}
+
+function parseVideoPlaceholder(filename: string, mime: string): { text: string; warnings: string[] } {
+  return {
+    text: `[Video/Audio content placeholder — ${filename} (${mime})]\nThis media file was not transcribed locally. For video/audio, provide a transcript or summary as contextual information, or run an external transcription worker (e.g., Whisper) and paste the result. The platform will then transform the transcript into the requested artefact (summary, minutes, newsletter, etc.).`,
+    warnings: ["Video/audio transcription not bundled by default. See docs/ingestion.md — provide transcript as text or run a transcription worker."],
   };
 }
 
@@ -145,16 +165,18 @@ export async function parseDocument(opts: {
   const mime = (mimeType || "").toLowerCase();
   const warnings: string[] = [];
 
-  // Trust-boundary: size + MIME validation
-  if (buffer.byteLength > MAX_BYTES) {
-    throw new Error(`File too large (${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB). Maximum is ${MAX_BYTES / 1024 / 1024} MB.`);
+  // Trust-boundary: size + MIME validation (media gets larger allowance)
+  const isMedia = ["mp4", "mov", "webm", "avi", "mp3", "wav", "ogg"].includes(ext) || mime.startsWith("video/") || mime.startsWith("audio/");
+  const limit = isMedia ? MAX_BYTES_MEDIA : MAX_BYTES_TEXT;
+  if (buffer.byteLength > limit) {
+    throw new Error(`File too large (${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB). Maximum is ${limit / 1024 / 1024} MB.`);
   }
-  if (!isAllowedMime(mime) && !["pdf", "docx", "doc", "pptx", "txt", "md", "csv", "json", "png", "jpg", "jpeg", "webp", "tiff"].includes(ext)) {
+  if (!isAllowedMime(mime) && !["pdf", "docx", "doc", "pptx", "txt", "md", "csv", "json", "png", "jpg", "jpeg", "webp", "tiff", "svg", "mp4", "mov", "webm", "avi", "mp3", "wav", "ogg", "html"].includes(ext)) {
     warnings.push(`Unrecognized MIME/type "${mime || ext}" — treating as text and attempting to extract.`);
   }
 
   // Attempt Docling worker first for binary formats (best quality, optional)
-  const isBinary = ["pdf", "docx", "doc", "pptx", "png", "jpg", "jpeg", "webp", "tiff"].includes(ext) || mime === "application/pdf";
+  const isBinary = ["pdf", "docx", "doc", "pptx", "png", "jpg", "jpeg", "webp", "tiff", "svg", "mp4", "mov", "webm", "avi", "mp3", "wav", "ogg"].includes(ext) || mime === "application/pdf" || mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/");
   if (isBinary && process.env.DOCLING_WORKER_URL) {
     const doclingText = await tryDoclingWorker(buffer, filename, mimeType);
     if (doclingText) {
@@ -191,9 +213,14 @@ export async function parseDocument(opts: {
     warnings.push("PPTX parsing is not bundled. Convert to PDF/DOCX or use the Docling worker for slide extraction.");
     text = "";
     parser = "pptx-placeholder";
-  } else if (["png", "jpg", "jpeg", "webp", "tiff"].includes(ext) || mime.startsWith("image/")) {
+  } else if (["png", "jpg", "jpeg", "webp", "tiff", "svg"].includes(ext) || mime.startsWith("image/")) {
     parser = "image-placeholder";
     const r = parseImagePlaceholder(filename);
+    text = r.text;
+    warnings.push(...r.warnings);
+  } else if (["mp4", "mov", "webm", "avi", "mp3", "wav", "ogg"].includes(ext) || mime.startsWith("video/") || mime.startsWith("audio/")) {
+    parser = "video-placeholder";
+    const r = parseVideoPlaceholder(filename, mime || ext);
     text = r.text;
     warnings.push(...r.warnings);
   } else {

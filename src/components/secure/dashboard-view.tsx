@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import {
-  FileStack, ShieldAlert, KeyRound, CheckCircle2, Activity, ArrowDownRight, Brain, Globe, Crosshair,
-  Inbox, FileSearch, BarChart3, PieChart as PieIcon, Clock3, Layers,
+  FileStack, ShieldAlert, KeyRound, CheckCircle2, ArrowDownRight, Brain, Globe, Crosshair,
+  Inbox, BarChart3, PieChart as PieIcon, Clock3, Layers,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import type { DashboardStats } from "@/types";

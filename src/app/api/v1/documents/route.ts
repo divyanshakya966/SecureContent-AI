@@ -93,6 +93,10 @@ export async function POST(req: NextRequest) {
             warnings: parsed.warnings,
           };
           warnings = parsed.warnings;
+          if (!content.trim()) {
+            const hint = warnings.length ? ` — ${warnings[0]}` : "";
+            return NextResponse.json({ error: `No extractable text found in "${filename}"${hint}. For images or scanned PDFs, enable OCR via Docling worker or paste the content as text.` }, { status: 400, headers: rateLimitHeaders(rl, 20) });
+          }
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : "File parsing failed.";
           return NextResponse.json({ error: msg }, { status: 400, headers: rateLimitHeaders(rl, 20) });
@@ -155,8 +159,10 @@ export async function POST(req: NextRequest) {
     console.error(`[documents POST] correlation=${correlationId}`, e);
     const msg = e instanceof Error ? e.message : "Upload failed.";
     // Do not leak internal stack; return generic message for unexpected errors.
-    const isExpected = msg.includes("too large") || msg.includes("parsing");
-    return NextResponse.json({ error: isExpected ? msg : "Upload failed." }, { status: 500, headers: rateLimitHeaders(rl, 20) });
+    const isExpected = msg.includes("too large") || msg.includes("parsing") || msg.includes("empty") || msg.includes("OCR") || msg.includes("No extractable");
+    // Empty/OCR failures are user errors → 400
+    const isUserError = msg.includes("empty") || msg.includes("OCR") || msg.includes("No extractable");
+    return NextResponse.json({ error: isExpected ? msg : "Upload failed." }, { status: isUserError ? 400 : isExpected ? 400 : 500, headers: rateLimitHeaders(rl, 20) });
   }
 }
 

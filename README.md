@@ -6,22 +6,32 @@
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-Policy-aware content transformation with built-in data protection. Uploads are scanned, classified, and sanitized before generation. Outputs are re-validated before delivery.
+AI-powered content transformation engine. Converts a common source of information (articles, reports, advisories, policy docs, research papers, prompts, images, videos or contextual information) into the specific deliverable requested by the operator — reducing manual effort, improving consistency, and accelerating creation.
+
+Policy-aware with built-in data protection: every upload is scanned, classified, and sanitized before generation, and every output is re-validated before delivery.
 
 ```
-Ingest → Scan → Classify → Sanitize → Transform → Validate → Deliver
+Ingest → Scan → Classify → Sanitize → Transform (configurable) → Validate → Deliver
 ```
+
+## Platform Overview
+
+**Source content** is submitted via the dashboard as high-quality English text, documents, articles, reports, prompts, images, videos or contextual information. The operator selects **one or more desired output types** and tunes **generation parameters**; the platform analyses input, understands context & intent, and generates the requested artefact(s).
+
+- **Source types:** PDF, DOCX, PPTX, TXT, MD, CSV, JSON, HTML, images (PNG/JPG/WebP/SVG via OCR placeholder or Docling), video/audio (MP4/MOV/WebM/MP3/WAV via transcript placeholder), plus direct paste of prompts & contextual info. Image/video OCR & transcription are enabled via the optional Docling/Python worker or by pasting the transcript.
+- **15 output formats:** Executive Summary, FAQ, Technical Report, Slide Outline, Email Draft, Press Release, Social Post (3 variants), Newsletter, Policy Brief, Training Guide, Incident Summary, Research Digest, Announcement, Blog Post, Meeting Minutes — single or batch (up to 8) per request.
+- **Configurable generation parameters:** Target audience (5 policy profiles), tone (formal/professional/technical/friendly/persuasive/neutral/concise), language (en/es/fr/de/ja/zh/hi/pt), level of detail (brief/standard/detailed/comprehensive), communication objective (inform/summarize/persuade/educate/announce/report/analyze/comply), and content style (narrative/bullet/structured/conversational/formal/executive/creative).
 
 ## Features
 
-- **Ingestion** — PDF, DOCX, TXT, MD, CSV, JSON, images (OCR via optional worker)
-- **Detection** — PII, secrets, prompt injection, internal assets, unsafe URLs
-- **Risk scoring** — Weighted model, transparent breakdown
-- **Policy engine** — 5 profiles (Public, Internal, Executive, HR, Security) with allow / mask / remove / block
+- **Ingestion** — PDF, DOCX, PPTX, TXT, MD, CSV, JSON, HTML, images & video/audio with isolated parsers; Docling worker for OCR & scanned PDFs
+- **Detection** — PII, secrets, prompt injection, internal assets, unsafe URLs (heuristic + entropy)
+- **Risk scoring** — Weighted, transparent breakdown with classification (PUBLIC → RESTRICTED)
+- **Policy engine** — 5 audience profiles (Public, Internal, Executive, HR, Security) with allow / mask / remove / block
 - **Sanitization** — Mask / redact / quarantine working copy; `<UNTRUSTED_DOCUMENT>` isolation for LLM
-- **Transformation** — Executive summary, FAQ, technical report, slide outline, email draft
-- **Output validation** — DLP rescan, grounding check, auto-repair
-- **Operations** — Dashboard, documents, intelligence (entities / IOCs / TTPs), policy comparison, audit trail
+- **Transformation** — 15 artefacts with 6 configurable dimensions (audience, tone, language, detail, objective, style); batch generation; grounding citations
+- **Output validation** — DLP rescan, HTML sanitization, grounding check, auto-repair
+- **Operations** — Dashboard, documents, intelligence (entities / IOCs / TTPs), policy comparison, audit trail, batch history
 
 ## Run Locally (Perfect Setup)
 
@@ -48,7 +58,7 @@ bunx prisma db push --accept-data-loss
 DATABASE_URL="file:./prisma/dev.db"   # local SQLite; for Postgres use postgresql://...
 GEMINI_API_KEY=""                      # https://aistudio.google.com/apikey
 GROQ_API_KEY=""                        # https://console.groq.com/keys (fallback)
-GEMINI_MODEL="gemini-2.0-flash"
+GEMINI_MODEL="gemini-1.5-flash"
 GROQ_MODEL="openai/gpt-oss-120b"
 # optional OCR
 # DOCLING_WORKER_URL="http://localhost:8001/parse"
@@ -145,7 +155,7 @@ DATABASE_URL="file:./dev.db"
 # LLM — server-side only (never expose to client or commit)
 GEMINI_API_KEY=""              # primary — Google AI Studio: https://aistudio.google.com/apikey
 GROQ_API_KEY=""                # fallback — Groq console: https://console.groq.com/keys (model: openai/gpt-oss-120b)
-GEMINI_MODEL="gemini-2.0-flash"
+GEMINI_MODEL="gemini-1.5-flash"
 GROQ_MODEL="openai/gpt-oss-120b"
 
 # Optional
@@ -159,12 +169,16 @@ DOCLING_WORKER_URL=""          # optional: http://localhost:8001/parse
 > If no keys are set, transforms fall back to a deterministic offline mock (still
 > exercises Output DLP + grounding).
 
-| Format | Parser |
+| Source | How it is handled |
 |---|---|
-| TXT/MD/CSV/JSON | Direct UTF-8 |
-| PDF | pdf-parse (or Docling → PyMuPDF → pdfminer) |
-| DOCX | mammoth (or Docling) |
-| PPTX / Images | Docling worker (optional) |
+| **Text** (articles, reports, prompts, contextual info) — TXT/MD/CSV/JSON/HTML | Direct UTF-8, NFC-normalized, control/zero-width stripped |
+| **Documents** — PDF | `pdf-parse`; Docling → PyMuPDF → pdfminer for scanned/complex |
+| **Documents** — DOCX | `mammoth`; Docling for complex |
+| **Slides** — PPTX | Placeholder locally; Docling worker for full extraction |
+| **Images** — PNG/JPG/WebP/SVG/TIFF | Placeholder locally (OCR via Docling/Tesseract); or paste description as contextual info |
+| **Video/Audio** — MP4/MOV/WebM/MP3/WAV | Transcript placeholder locally; paste transcript or run Whisper worker; then transform transcript |
+
+Generation is **always** `sanitized working copy → LLM inside `<UNTRUSTED_DOCUMENT>` envelope → output sanitizer → DLP rescan → grounding`.
 
 ## Policies
 
@@ -182,20 +196,27 @@ Injection spans are always quarantined (`QUARANTINE`).
 
 ```
 POST   /api/v1/documents                    # file (multipart) | { sampleId } | { title, content }
-GET    /api/v1/documents
+GET    /api/v1/documents                    # ?status=&take=&skip=
 GET    /api/v1/documents/:id
 DELETE /api/v1/documents/:id
 POST   /api/v1/documents/:id/scan
 POST   /api/v1/documents/:id/sanitize       # { policy }
-POST   /api/v1/documents/:id/transform      # { profile, outputType }
+POST   /api/v1/documents/:id/transform      # { profile, outputType | outputTypes[] (1..8), tone, language, detailLevel, objective, style }
 GET    /api/v1/documents/:id/security-report
 GET    /api/v1/documents/:id/history
+GET    /api/v1/documents/:id/intelligence   # GET (cached) | POST (force refresh)
+POST   /api/v1/documents/:id/policy-compare # { profiles[], outputType }
 GET    /api/v1/stats
-GET    /api/v1/audit
-GET    /api/v1/policies
+GET    /api/v1/audit                        # ?take=
+GET    /api/v1/policies                     # GET list | POST create
 GET    /api/v1/samples
 POST   /api/v1/seed
+GET    /api/health                          # (also /api) -> { status, database, llm, pipeline }
 ```
+
+`profile`: `PUBLIC_RELEASE | INTERNAL_SUMMARY | EXECUTIVE_BRIEF | HR_SAFE | SECURITY_INCIDENT` (target audience)  
+`outputType` (15): `EXECUTIVE_SUMMARY | FAQ | TECHNICAL_REPORT | SLIDE_OUTLINE | EMAIL_DRAFT | PRESS_RELEASE | SOCIAL_POST | NEWSLETTER | POLICY_BRIEF | TRAINING_GUIDE | INCIDENT_SUMMARY | RESEARCH_DIGEST | ANNOUNCEMENT | BLOG_POST | MEETING_MINUTES`  
+`outputTypes[]` (batch 1..8) and generation controls `tone`, `language` (`en/es/fr/de/ja/zh/hi/pt`), `detailLevel` (`brief/standard/detailed/comprehensive`), `objective` (`inform/summarize/persuade/educate/announce/report/analyze/comply`), `style` (`narrative/bullet/structured/conversational/formal/executive/creative`) are all documented in `docs/api.md`.
 
 Details: `docs/api.md`
 

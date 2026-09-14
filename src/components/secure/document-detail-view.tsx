@@ -3,9 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Loader2, ShieldCheck, Sparkles, FileCheck2, RefreshCw,
+  ArrowLeft, Loader2, ShieldCheck, Sparkles, FileCheck2,
   ScanLine, Wand2, AlertTriangle, CheckCircle2, XCircle, ScrollText, ChevronRight,
-  Brain, Hash, Crosshair, ShieldAlert, Users, Globe, Info, ArrowRight, Eye, Lock,
+  Brain, Hash, Crosshair, ShieldAlert, Users, Globe, ArrowRight, Eye, Lock,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useApp } from "@/lib/store";
@@ -103,19 +103,48 @@ export function DocumentDetailView() {
     } finally { setBusy(null); }
   }
 
-  async function runTransform(profile: TransformationProfile, outputType: OutputType) {
+  async function runTransform(
+    profile: TransformationProfile,
+    outputType: OutputType,
+    params?: { tone?: string; language?: string; detailLevel?: string; objective?: string; style?: string }
+  ) {
     setBusy("transform");
     try {
-      const res = await api.transformDocument(doc!.id, profile, outputType);
-      if (res.transformation.outputDlp === "FAIL") {
-        toast.warning("Output released with repairs", { description: `${res.transformation.leakageCount} leakage candidate(s) auto-redacted.` });
+      const res = await api.transformDocument(doc!.id, profile, outputType, params as any);
+      const tx = res.transformation ?? res.transformations?.[0];
+      if (!tx) throw new Error("No transformation returned");
+      if (tx.outputDlp === "FAIL") {
+        toast.warning("Output released with repairs", { description: `${tx.leakageCount} leakage candidate(s) auto-redacted.` });
       } else {
-        toast.success("Transformation released", { description: `Output DLP passed · risk Δ ${res.transformation.riskDelta >= 0 ? "−" : "+"}${Math.abs(res.transformation.riskDelta)}` });
+        toast.success("Transformation released", { description: `${tx.outputType} · DLP passed · risk Δ ${tx.riskDelta >= 0 ? "−" : "+"}${Math.abs(tx.riskDelta)}` });
       }
       await reload();
       bumpRefresh();
     } catch (e: any) {
       toast.error("Transformation failed", { description: e.message });
+    } finally { setBusy(null); }
+  }
+
+  async function runBatchTransform(
+    profile: TransformationProfile,
+    outputTypes: OutputType[],
+    params?: { tone?: string; language?: string; detailLevel?: string; objective?: string; style?: string }
+  ) {
+    if (!outputTypes.length) {
+      toast.error("Select at least one output type");
+      return;
+    }
+    setBusy("transform");
+    try {
+      const res = outputTypes.length === 1
+        ? await api.transformDocument(doc!.id, profile, outputTypes[0], params as any)
+        : await api.transformBatch(doc!.id, { profile, outputTypes, ...(params as any) });
+      const count = (res as any).transformations?.length ?? 1;
+      toast.success(`Generated ${count} artefact${count > 1 ? "s" : ""}`, { description: `${outputTypes.join(", ")} via ${profile}` });
+      await reload();
+      bumpRefresh();
+    } catch (e: any) {
+      toast.error("Batch transformation failed", { description: e.message });
     } finally { setBusy(null); }
   }
 
@@ -261,7 +290,7 @@ export function DocumentDetailView() {
 
         {/* TRANSFORM */}
         <TabsContent value="transform" className="mt-4">
-          <TransformTab doc={doc} busy={busy} onTransform={runTransform} />
+          <TransformTab doc={doc} busy={busy} onTransform={runTransform} onBatch={runBatchTransform} />
         </TabsContent>
 
         {/* REPORT */}
@@ -470,20 +499,49 @@ function recommendPolicy(classification: string): string {
 // Transform tab
 // ---------------------------------------------------------------------------
 
-function TransformTab({ doc, busy, onTransform }: {
+function TransformTab({ doc, busy, onTransform, onBatch }: {
   doc: DocumentRecord;
   busy: string | null;
-  onTransform: (profile: TransformationProfile, outputType: OutputType) => void;
+  onTransform: (profile: TransformationProfile, outputType: OutputType, params?: Record<string, string>) => void;
+  onBatch?: (profile: TransformationProfile, outputTypes: OutputType[], params?: Record<string, string>) => void;
 }) {
   const [profile, setProfile] = useState<TransformationProfile>(recommendProfile(doc.classification));
-  const [outputType, setOutputType] = useState<OutputType>("EXECUTIVE_SUMMARY");
-  const latest = doc.transformations?.[0];
+  const [tone, setTone] = useState<string>("professional");
+  const [language, setLanguage] = useState<string>("en");
+  const [detailLevel, setDetailLevel] = useState<string>("standard");
+  const [objective, setObjective] = useState<string>("inform");
+  const [style, setStyle] = useState<string>("structured");
+  const [selectedTypes, setSelectedTypes] = useState<OutputType[]>(["EXECUTIVE_SUMMARY"]);
+  const [viewTxId, setViewTxId] = useState<string | null>(null);
+  const transformations = doc.transformations ?? [];
+  const activeTx = viewTxId ? transformations.find((t) => t.id === viewTxId) ?? transformations[0] : transformations[0];
+
+  const toggleType = (t: OutputType) => {
+    setSelectedTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t].slice(0, 8));
+  };
+
+  const handleSingleGenerate = () => {
+    const primary = selectedTypes[0] ?? "EXECUTIVE_SUMMARY";
+    if (selectedTypes.length > 1 && onBatch) onBatch(profile, selectedTypes, { tone, language, detailLevel, objective, style });
+    else onTransform(profile, primary, { tone, language, detailLevel, objective, style });
+  };
+
   return (
     <div className="space-y-4">
       <Card className="p-5">
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-sm font-semibold tracking-tight flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> Configurable Transformation</h3>
+            <p className="text-xs text-muted-foreground">Select deliverable(s) and fine-tune generation parameters. Source is the sanitized working copy only.</p>
+          </div>
+          <div className="hidden sm:flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span className="rounded-full border bg-muted px-2 py-1">{selectedTypes.length} artefact{selectedTypes.length !== 1 ? "s" : ""} selected</span>
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Profile</Label>
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Target Audience (Profile)</Label>
             <Select value={profile} onValueChange={(v) => setProfile(v as TransformationProfile)}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -492,25 +550,114 @@ function TransformTab({ doc, busy, onTransform }: {
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-[11px] text-muted-foreground">Controls allow/mask/remove/block before LLM.</p>
           </div>
           <div className="space-y-2">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Output</Label>
-            <Select value={outputType} onValueChange={(v) => setOutputType(v as OutputType)}>
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Tone</Label>
+            <Select value={tone} onValueChange={setTone}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {Object.entries(OUTPUT_LABELS).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>{v}</SelectItem>
-                ))}
+                <SelectItem value="formal">Formal</SelectItem>
+                <SelectItem value="professional">Professional</SelectItem>
+                <SelectItem value="technical">Technical</SelectItem>
+                <SelectItem value="friendly">Friendly</SelectItem>
+                <SelectItem value="persuasive">Persuasive</SelectItem>
+                <SelectItem value="neutral">Neutral</SelectItem>
+                <SelectItem value="concise">Concise</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-end">
-            <Button onClick={() => onTransform(profile, outputType)} disabled={!!busy || doc.status === "BLOCKED"} className="w-full gap-1.5">
-              {busy === "transform" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              Generate
-            </Button>
+          <div className="space-y-2">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Language</Label>
+            <Select value={language} onValueChange={setLanguage}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="en">English</SelectItem>
+                <SelectItem value="es">Español</SelectItem>
+                <SelectItem value="fr">Français</SelectItem>
+                <SelectItem value="de">Deutsch</SelectItem>
+                <SelectItem value="ja">日本語</SelectItem>
+                <SelectItem value="zh">中文</SelectItem>
+                <SelectItem value="hi">हिन्दी</SelectItem>
+                <SelectItem value="pt">Português</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
+
+        <div className="grid gap-4 md:grid-cols-3 mt-4">
+          <div className="space-y-2">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Level of Detail</Label>
+            <Select value={detailLevel} onValueChange={setDetailLevel}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="brief">Brief</SelectItem>
+                <SelectItem value="standard">Standard</SelectItem>
+                <SelectItem value="detailed">Detailed</SelectItem>
+                <SelectItem value="comprehensive">Comprehensive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Communication Objective</Label>
+            <Select value={objective} onValueChange={setObjective}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="inform">Inform</SelectItem>
+                <SelectItem value="summarize">Summarize</SelectItem>
+                <SelectItem value="persuade">Persuade</SelectItem>
+                <SelectItem value="educate">Educate</SelectItem>
+                <SelectItem value="announce">Announce</SelectItem>
+                <SelectItem value="report">Report</SelectItem>
+                <SelectItem value="analyze">Analyze</SelectItem>
+                <SelectItem value="comply">Comply</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Content Style</Label>
+            <Select value={style} onValueChange={setStyle}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="narrative">Narrative</SelectItem>
+                <SelectItem value="bullet">Bullet Points</SelectItem>
+                <SelectItem value="structured">Structured</SelectItem>
+                <SelectItem value="conversational">Conversational</SelectItem>
+                <SelectItem value="formal">Formal Document</SelectItem>
+                <SelectItem value="executive">Executive</SelectItem>
+                <SelectItem value="creative">Creative</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Output Type(s) — select one or more deliverables</Label>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {Object.entries(OUTPUT_LABELS).map(([k, v]) => {
+              const checked = selectedTypes.includes(k as OutputType);
+              return (
+                <label key={k} className={`flex items-center gap-2 rounded-lg border p-2.5 cursor-pointer transition-colors ${checked ? "bg-primary/5 border-primary/30" : "bg-card hover:bg-muted/50"}`}>
+                  <input type="checkbox" checked={checked} onChange={() => toggleType(k as OutputType)} className="h-4 w-4 rounded border-input accent-primary" />
+                  <span className="text-xs font-medium">{v}</span>
+                  <span className="ml-auto font-mono text-[10px] text-muted-foreground">{k}</span>
+                </label>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">You can generate up to 8 artefacts in one batch. Each is produced via the security pipeline independently.</p>
+        </div>
+
+        <div className="mt-5 flex gap-2">
+          <Button onClick={handleSingleGenerate} disabled={!!busy || doc.status === "BLOCKED" || !selectedTypes.length} className="flex-1 gap-1.5">
+            {busy === "transform" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {selectedTypes.length > 1 ? `Generate ${selectedTypes.length} artefacts` : "Generate artefact"}
+          </Button>
+          {selectedTypes.length > 1 && (
+            <Button variant="outline" onClick={() => setSelectedTypes(["EXECUTIVE_SUMMARY"])} className="shrink-0">Clear</Button>
+          )}
+        </div>
+
         {doc.status === "BLOCKED" && (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-[var(--risk-critical)]/30 bg-[var(--risk-critical)]/5 p-3 text-xs">
             <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--risk-critical)]" />
@@ -525,31 +672,45 @@ function TransformTab({ doc, busy, onTransform }: {
         )}
       </Card>
 
-      {latest && latest.outputContent && (
+      {transformations.length > 0 && activeTx?.outputContent && (
         <Card className="p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h3 className="text-sm font-semibold">Generated output</h3>
+              <h3 className="text-sm font-semibold">Generated artefacts — {transformations.length} deliverable{transformations.length !== 1 ? "s" : ""}</h3>
               <p className="text-xs text-muted-foreground">
-                {OUTPUT_LABELS[latest.outputType]} · {POLICY_LABELS[latest.profile]} · {latest.model}
+                {OUTPUT_LABELS[activeTx.outputType]} · {POLICY_LABELS[activeTx.profile]} · {activeTx.model}
+                {activeTx.tone ? ` · ${activeTx.tone} · ${activeTx.language} · ${activeTx.detailLevel}` : ""}
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <ValidationBadge status={latest.outputDlp} />
-              <ValidationBadge status={latest.grounding} />
+              <ValidationBadge status={activeTx.outputDlp} />
+              <ValidationBadge status={activeTx.grounding} />
             </div>
           </div>
+          {transformations.length > 1 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {transformations.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setViewTxId(t.id)}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${activeTx.id === t.id ? "bg-primary text-primary-foreground border-primary" : "bg-muted hover:bg-muted/80 border-border"}`}
+                >
+                  {OUTPUT_LABELS[t.outputType]}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="mt-3 grid gap-4 lg:grid-cols-3">
             <div className="lg:col-span-2 overflow-auto scroll-thin rounded-lg border border-border bg-muted/30 p-4 max-h-[28rem]">
-              <pre className="m-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono text-xs leading-relaxed">{sanitizeForDisplay(latest.outputContent)}</pre>
+              <pre className="m-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono text-xs leading-relaxed">{sanitizeForDisplay(activeTx.outputContent ?? "")}</pre>
             </div>
             <div>
               <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Grounding citations</h4>
               <div className="max-h-[26rem] space-y-2 overflow-auto scroll-thin">
-                {latest.citations.length === 0 ? (
+                {activeTx.citations.length === 0 ? (
                   <p className="text-xs text-muted-foreground">No citable claims detected.</p>
                 ) : (
-                  latest.citations.map((c, i) => (
+                  activeTx.citations.map((c, i) => (
                     <div key={i} className={cn(
                       "rounded-lg border p-2.5 text-xs",
                       c.grounded ? "border-[var(--risk-safe)]/30 bg-[var(--risk-safe)]/5" : "border-[var(--risk-medium)]/30 bg-[var(--risk-medium)]/5"

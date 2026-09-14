@@ -63,5 +63,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO- http://localhost:3000/api/v1/stats || exit 1
 
 # Preflight: ensure DB exists and push schema, then start Node server
+# For Postgres use DATABASE_URL=postgresql://... and run `npx prisma migrate deploy` instead of db push.
 # standalone was copied to /app (server.js at /app/server.js), use npx for prisma to avoid bunx resolution issues
-CMD ["sh", "-c", "mkdir -p /app/db /app/prisma && DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} npx prisma db push --accept-data-loss 2>/dev/null || true; DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} node server.js"]
+CMD ["sh", "-c", "mkdir -p /app/db /app/prisma && if echo \"$DATABASE_URL\" | grep -q \"^postgresql://\\|^postgres://\"; then echo \"[preflight] Postgres detected — running prisma migrate deploy\" && DATABASE_URL=${DATABASE_URL} npx prisma migrate deploy 2>&1 || DATABASE_URL=${DATABASE_URL} npx prisma db push --accept-data-loss 2>&1 || true; else DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} npx prisma db push --accept-data-loss 2>&1 || true; fi; echo \"[preflight] DB ready — starting server\"; DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} node server.js"]

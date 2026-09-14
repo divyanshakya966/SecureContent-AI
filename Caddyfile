@@ -1,21 +1,21 @@
 # SecureContent AI — Caddy reverse proxy
-# Single fixed upstream; no query-controlled port indirection (SSRF hardening).
+# Hardened: fixed upstream (app:3000 in compose, localhost:3000 for bare-metal).
 # Security headers are emitted both here and in Next.js (defense in depth).
 
 :81 {
 	header {
-		# HSTS (effective when TLS termination is in front of Caddy)
 		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
 		X-Frame-Options "DENY"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
-		# Minimal CSP — Next.js emits a more specific one per-response
 		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 	}
 
+	# App upstream: `app` resolves in docker-compose network; falls back to localhost for bare VM.
+	# Caddy will try app:3000 first; if that host doesn't resolve (bare metal), localhost:3000 serves.
 	handle {
-		reverse_proxy localhost:3000 {
+		reverse_proxy app:3000 localhost:3000 {
 			header_up Host {host}
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto {scheme}
@@ -24,9 +24,8 @@
 		}
 	}
 
-	# Health check endpoint (proxied)
 	handle /health* {
-		reverse_proxy localhost:3000 {
+		reverse_proxy app:3000 localhost:3000 {
 			header_up Host {host}
 		}
 	}

@@ -92,6 +92,18 @@ export function UploadView() {
 
   return (
     <div className="space-y-5">
+      <Card className="p-4 border-primary/20 bg-primary/[0.04]">
+        <div className="flex gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground"><FlaskConical className="h-4 w-4" /></div>
+          <div>
+            <div className="text-sm font-semibold tracking-tight">AI-Powered Content Transformation Engine</div>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground max-w-[80ch]">
+              Submit your source — text, documents, articles, reports, prompts, images, videos or contextual information — and select one or more deliverables. The platform analyses context & intent and generates the requested artefact(s). Configure audience, tone, language, detail, objective and style per transformation. Every output is sanitized, grounded, and validated before delivery.
+            </p>
+          </div>
+        </div>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-5">
           <div className="flex items-center justify-between">
@@ -99,9 +111,9 @@ export function UploadView() {
               <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 border border-primary/15 text-primary"><UploadCloud className="h-4 w-4" /></span>
               Upload file
             </div>
-            <span className="rounded-full border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Max 10 MB</span>
+            <span className="rounded-full border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Max 25 MB</span>
           </div>
-          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">PDF, DOCX, TXT, MD, CSV, JSON — validated, parsed in isolation, then scanned.</p>
+          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">PDF, DOCX, PPTX, TXT, MD, CSV, JSON, HTML, images (PNG/JPG/WebP/SVG) & video/audio (MP4/MOV/WebM/MP3/WAV) — validated, parsed in isolation, then scanned. Images use OCR placeholder locally; videos use transcript placeholder — paste transcript as contextual info or enable Docling/Whisper worker.</p>
           <div
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
@@ -124,7 +136,7 @@ export function UploadView() {
             <input
               ref={inputRef}
               type="file"
-              accept=".pdf,.docx,.txt,.md,.csv,.json,text/*"
+              accept=".pdf,.docx,.pptx,.txt,.md,.csv,.json,.html,.png,.jpg,.jpeg,.webp,.svg,.mp4,.mov,.webm,.avi,.mp3,.wav,.ogg,text/*,image/*,video/*,audio/*"
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
@@ -140,7 +152,7 @@ export function UploadView() {
               )}
             </div>
             <p className="mt-3 text-sm font-medium tracking-tight">{busy?.startsWith("upload:") ? "Scanning…" : "Drop file here or click to browse"}</p>
-            <p className="mt-1 text-xs text-muted-foreground">PDF · DOCX · TXT · CSV · JSON</p>
+            <p className="mt-1 text-xs text-muted-foreground">PDF · DOCX · PPTX · Images · Video/Audio · TXT · CSV · JSON</p>
           </div>
           <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Parser-isolated · Size/MIME validated
@@ -150,9 +162,9 @@ export function UploadView() {
         <Card className="p-5">
           <div className="flex items-center gap-2 text-sm font-semibold tracking-tight">
             <span className="flex h-7 w-7 items-center justify-center rounded-md bg-muted border text-muted-foreground"><FileText className="h-4 w-4" /></span>
-            Paste content
+            Paste content / Prompts / Contextual Info
           </div>
-          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">Direct text — same zero-trust scan and audit as file uploads.</p>
+          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">High-quality English text, articles, reports, prompts, or video transcripts — same zero-trust scan and audit as file uploads. Use this for contextual instructions that accompany a file.</p>
           <div className="mt-4 space-y-3">
             <div>
               <Label htmlFor="pt" className="text-xs font-medium">Title <span className="font-normal text-muted-foreground">(optional)</span></Label>
@@ -175,13 +187,17 @@ export function UploadView() {
       </div>
 
       <Card className="p-5">
+        <div className="rounded-lg border border-dashed bg-muted/20 p-3 mb-4">
+          <div className="text-xs font-semibold">Next: Configure generation on the document page</div>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">After ingest, open the document → <span className="font-medium text-foreground">Transform</span> tab. Select one or more of 15 output formats (Executive Summary, FAQ, Technical Report, Slide Outline, Email, Press Release, Social Post, Newsletter, Policy Brief, Training Guide, Incident Summary, Research Digest, Announcement, Blog Post, Meeting Minutes) and tune <span className="font-medium text-foreground">audience, tone, language, detail, objective & style</span>. Each artefact is produced via the sanitized working copy and validated before delivery.</p>
+        </div>
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-sm font-semibold tracking-tight flex items-center gap-2">
               <FlaskConical className="h-4 w-4 text-muted-foreground" />
-              Synthetic samples
+              Synthetic samples — 5 scenarios
             </div>
-            <p className="mt-1 max-w-[72ch] text-xs leading-relaxed text-muted-foreground">For evaluation — each runs through the real pipeline (scan → sanitize → transform → validate) and populates dashboard/intelligence/audit. All identifiers are fictitious.</p>
+            <p className="mt-1 max-w-[72ch] text-xs leading-relaxed text-muted-foreground">For evaluation — each runs through the real pipeline (scan → sanitize → transform → validate) and populates dashboard/intelligence/audit. All identifiers are fictitious. Try generating multiple artefacts from one source to see policy-aware differences.</p>
           </div>
           <span className="hidden sm:inline-flex rounded-full border bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{samples?.length ?? 5} datasets</span>
         </div>

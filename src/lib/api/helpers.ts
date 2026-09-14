@@ -22,6 +22,7 @@ type DbTransformation = {
   id: string; documentId: string; profile: string; outputType: string; model: string;
   outputContent: string | null; grounding: string; policyStatus: string; outputDlp: string;
   riskDelta: number; leakageCount: number; citations: string | null; createdAt: Date | string;
+  tone?: string | null; language?: string | null; detailLevel?: string | null; objective?: string | null; style?: string | null; batchId?: string | null;
 };
 type DbIntelligence = {
   id: string; documentId: string; entities: string | null; iocs: string | null; ttps: string | null;
@@ -86,6 +87,12 @@ export function serializeTransformation(t: DbTransformation): TransformationReco
     leakageCount: t.leakageCount,
     citations,
     createdAt: toIso(t.createdAt),
+    tone: (t.tone as TransformationRecord["tone"]) ?? undefined,
+    language: (t.language as TransformationRecord["language"]) ?? undefined,
+    detailLevel: (t.detailLevel as TransformationRecord["detailLevel"]) ?? undefined,
+    objective: (t.objective as TransformationRecord["objective"]) ?? undefined,
+    style: (t.style as TransformationRecord["style"]) ?? undefined,
+    batchId: (t.batchId as string | null) ?? null,
   };
 }
 

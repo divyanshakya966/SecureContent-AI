@@ -64,7 +64,7 @@ model Transformation {
   id            String   @id @default(cuid())
   documentId    String
   profile       String   // PUBLIC_RELEASE | INTERNAL_SUMMARY | EXECUTIVE_BRIEF | HR_SAFE | SECURITY_INCIDENT
-  outputType    String   // EXECUTIVE_SUMMARY | FAQ | TECHNICAL_REPORT | SLIDE_OUTLINE | EMAIL_DRAFT
+  outputType    String   // EXECUTIVE_SUMMARY | FAQ | TECHNICAL_REPORT | SLIDE_OUTLINE | EMAIL_DRAFT | +10 new types
   model         String   @default("zai-glm")
   outputContent String?
   grounding     String   @default("PENDING") // PASS | FAIL | PENDING | SKIPPED
@@ -73,12 +73,20 @@ model Transformation {
   riskDelta     Int      @default(0)
   leakageCount  Int      @default(0)
   citations     String   @default("[]") // JSON array of {claim, evidence, grounded}
+  // Industry-grade generation controls — all optional, backwards compatible
+  tone          String?  // GenerationTone
+  language      String?  // GenerationLanguage
+  detailLevel   String?  // DetailLevel
+  objective     String?  // CommunicationObjective
+  style         String?  // ContentStyle
+  batchId       String?  // groups multi-output batch
   createdAt     DateTime @default(now())
 
   document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@index([documentId])
   @@index([createdAt])
+  @@index([batchId])
 }
 
 model AuditLog {

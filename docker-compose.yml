@@ -31,7 +31,7 @@ services:
       timeout: 5s
       retries: 3
 
-  # Reverse-proxy on :81 mirrors the harness Caddyfile (optional)
+  # Reverse-proxy on :81 — hardens headers + forwards x-real-ip. Optional.
   caddy:
     image: caddy:2-alpine
     ports:
@@ -39,7 +39,13 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:
-      - app
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:81/api/v1/stats"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   # Optional Python Docling worker — only started with --profile docling
