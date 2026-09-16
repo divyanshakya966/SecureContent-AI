@@ -1,7 +1,7 @@
 # SecureContent AI
 
-[![CI](https://github.com/securecontent-ai/securecontent-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/securecontent-ai/securecontent-ai/actions/workflows/ci.yml)
-[![Security](https://github.com/securecontent-ai/securecontent-ai/actions/workflows/security.yml/badge.svg)](https://github.com/securecontent-ai/securecontent-ai/actions/workflows/security.yml)
+[![CI](https://github.com/divyanshakya966/SecureContent-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/divyanshakya966/SecureContent-AI/actions/workflows/ci.yml)
+[![Security](https://github.com/divyanshakya966/SecureContent-AI/actions/workflows/security.yml/badge.svg)](https://github.com/divyanshakya966/SecureContent-AI/actions/workflows/security.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
