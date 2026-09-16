@@ -1,21 +1,25 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, ShieldCheck, Sparkles, FileCheck2,
   ScanLine, Wand2, AlertTriangle, CheckCircle2, XCircle, ScrollText, ChevronRight,
   Brain, Hash, Crosshair, ShieldAlert, Users, Globe, ArrowRight, Eye, Lock,
+  Copy, Check, Download,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useApp } from "@/lib/store";
 import type {
   DocumentRecord, Finding, SecurityReport, TransformationRecord,
-  AuditLogEntry, TransformationProfile, OutputType,
+  AuditLogEntry, TransformationProfile, OutputType, PolicyRule,
+  FindingActionOverride, ScanConfig, SanitizeAction,
 } from "@/types";
-import { POLICY_LABELS, OUTPUT_LABELS } from "@/lib/security/policies";
+import { POLICY_LABELS, OUTPUT_LABELS, policyDisplayName } from "@/lib/security/policies";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -30,10 +34,11 @@ import { FindingsTable } from "@/components/secure/findings-table";
 import { DiffView } from "@/components/secure/diff-view";
 import { Stepper, type StepDef } from "@/components/secure/stepper";
 import {
-  riskColor, riskLabel, formatRelativeTime, formatBytes, CATEGORY_META,
+  riskColor, formatRelativeTime, formatBytes, CATEGORY_META,
 } from "@/lib/display";
 import { sanitizeForDisplay } from "@/lib/text";
 import { cn } from "@/lib/utils";
+import { HelpButton } from "@/components/secure/help-button";
 
 type Tab = "overview" | "findings" | "diff" | "transform" | "report" | "intelligence" | "history";
 
@@ -75,11 +80,11 @@ export function DocumentDetailView() {
   const inputFindings = (doc.findings ?? []).filter((f) => f.stage === "INPUT");
   const outputFindings = (doc.findings ?? []).filter((f) => f.stage === "OUTPUT");
 
-  async function runScan() {
+  async function runScan(config?: ScanConfig) {
     setBusy("scan");
     try {
-      await api.scanDocument(doc!.id);
-      toast.success("Re-scanned", { description: "Security findings refreshed." });
+      await api.scanDocument(doc!.id, config);
+      toast.success("Re-scanned", { description: config ? "Security findings refreshed with your scan options." : "Security findings refreshed." });
       await reload();
       bumpRefresh();
     } catch (e: any) {
@@ -87,14 +92,15 @@ export function DocumentDetailView() {
     } finally { setBusy(null); }
   }
 
-  async function runSanitize(policy: string) {
+  async function runSanitize(policy: string, findingActions?: FindingActionOverride[]) {
     setBusy("sanitize");
     try {
-      const res = await api.sanitizeDocument(doc!.id, policy);
+      const res = await api.sanitizeDocument(doc!.id, policy, findingActions);
+      const overridden = findingActions?.length ?? 0;
       if (res.blocked) {
         toast.error("Policy blocked transformation", { description: `${res.actions.length} block-level findings. Sanitization refused.` });
       } else {
-        toast.success("Sanitized", { description: `Residual risk ${res.residualRisk}/100 · ${res.actions.length} actions applied.` });
+        toast.success("Sanitized", { description: `Residual risk ${res.residualRisk}/100 · ${res.actions.length} actions applied${overridden ? ` (${overridden} your choices)` : ""}.` });
       }
       await reload();
       bumpRefresh();
@@ -109,6 +115,7 @@ export function DocumentDetailView() {
     params?: { tone?: string; language?: string; detailLevel?: string; objective?: string; style?: string }
   ) {
     setBusy("transform");
+    const prevCount = doc!.transformations?.length ?? 0;
     try {
       const res = await api.transformDocument(doc!.id, profile, outputType, params as any);
       const tx = res.transformation ?? res.transformations?.[0];
@@ -121,6 +128,22 @@ export function DocumentDetailView() {
       await reload();
       bumpRefresh();
     } catch (e: any) {
+      // The server often still completes the transform after a client-side timeout
+      // (LLM latency). Reload and check before reporting failure.
+      try {
+        const fresh = await api.getDocument(doc!.id);
+        setDoc(fresh);
+        bumpRefresh();
+        if ((fresh.transformations?.length ?? 0) > prevCount) {
+          const tx = fresh.transformations?.[0];
+          toast.success("Transformation released", {
+            description: tx ? `${tx.outputType} · completed (recovered after timeout)` : "Completed — reloaded latest output.",
+          });
+          return;
+        }
+      } catch {
+        // fall through to error toast
+      }
       toast.error("Transformation failed", { description: e.message });
     } finally { setBusy(null); }
   }
@@ -135,15 +158,32 @@ export function DocumentDetailView() {
       return;
     }
     setBusy("transform");
+    const prevCount = doc!.transformations?.length ?? 0;
     try {
       const res = outputTypes.length === 1
         ? await api.transformDocument(doc!.id, profile, outputTypes[0], params as any)
         : await api.transformBatch(doc!.id, { profile, outputTypes, ...(params as any) });
       const count = (res as any).transformations?.length ?? 1;
-      toast.success(`Generated ${count} artefact${count > 1 ? "s" : ""}`, { description: `${outputTypes.join(", ")} via ${profile}` });
+      const itemErrors = (res as any).errors as { outputType: string; error: string }[] | undefined;
+      if (itemErrors?.length) {
+        toast.warning(`Generated ${count} of ${outputTypes.length} artefacts`, { description: `${itemErrors.map((e) => e.outputType).join(", ")} failed — retry those types.` });
+      } else {
+        toast.success(`Generated ${count} artefact${count > 1 ? "s" : ""}`, { description: `${outputTypes.join(", ")} via ${profile}` });
+      }
       await reload();
       bumpRefresh();
     } catch (e: any) {
+      try {
+        const fresh = await api.getDocument(doc!.id);
+        setDoc(fresh);
+        bumpRefresh();
+        if ((fresh.transformations?.length ?? 0) > prevCount) {
+          toast.success("Transformation released", { description: "Completed — reloaded latest output (recovered after timeout)." });
+          return;
+        }
+      } catch {
+        // fall through to error toast
+      }
       toast.error("Batch transformation failed", { description: e.message });
     } finally { setBusy(null); }
   }
@@ -179,12 +219,12 @@ export function DocumentDetailView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 text-xs">
-        <Button variant="ghost" size="sm" onClick={() => setView("documents")} className="h-7 gap-1 px-2 text-xs font-medium text-muted-foreground hover:text-foreground">
+      <div className="flex items-center gap-2 text-xs min-w-0">
+        <Button variant="ghost" size="sm" onClick={() => setView("documents")} className="h-7 gap-1 px-2 text-xs font-medium text-muted-foreground hover:text-foreground shrink-0">
           <ArrowLeft className="h-3.5 w-3.5" /> Documents
         </Button>
-        <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
-        <span className="font-medium tracking-tight truncate">{doc.title}</span>
+        <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/40" />
+        <span className="font-medium tracking-tight truncate min-w-0" title={doc.title}>{doc.title}</span>
         <span className="hidden sm:inline font-mono text-[11px] text-muted-foreground">· {doc.id.slice(0, 8)}</span>
       </div>
 
@@ -213,12 +253,11 @@ export function DocumentDetailView() {
               </div>
             </div>
             <div className="flex items-start gap-5 shrink-0">
-              <div className="flex flex-col items-center">
-                <RiskGauge value={riskValue} before={doc.riskBefore} size={96} />
-                <span className="mt-1.5 text-[11px] font-medium" style={{ color: riskColor(riskValue) }}>{riskLabel(riskValue)} · {riskValue}/100</span>
+              <div className="flex flex-col items-center shrink-0 pt-1">
+                <RiskGauge value={riskValue} before={doc.riskBefore} size={104} />
               </div>
               <div className="hidden sm:flex flex-col gap-2 min-w-[132px]">
-                <Button variant="outline" size="sm" onClick={runScan} disabled={!!busy} className="h-8 gap-1.5 justify-start text-xs font-medium">
+                <Button variant="outline" size="sm" onClick={() => runScan()} disabled={!!busy} className="h-8 gap-1.5 justify-start text-xs font-medium">
                   {busy === "scan" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanLine className="h-3.5 w-3.5" />}
                   Re-scan
                 </Button>
@@ -234,12 +273,17 @@ export function DocumentDetailView() {
             </div>
           </div>
           <div className="flex sm:hidden gap-2 mt-4">
-            <Button variant="outline" size="sm" onClick={runScan} disabled={!!busy} className="flex-1 h-8 gap-1.5 text-xs">
+            <Button variant="outline" size="sm" onClick={() => runScan()} disabled={!!busy} className="flex-1 h-8 gap-1.5 text-xs">
               <ScanLine className="h-3.5 w-3.5" /> Re-scan
             </Button>
             <Button size="sm" onClick={() => setTab("diff")} disabled={!!busy} className="flex-1 h-8 gap-1.5 text-xs">
               <Wand2 className="h-3.5 w-3.5" /> Sanitize
             </Button>
+            {doc.transformations && doc.transformations.length > 0 && (
+              <Button variant="outline" size="sm" onClick={() => setTab("transform")} className="flex-1 h-8 gap-1.5 text-xs">
+                <Eye className="h-3.5 w-3.5" /> Output
+              </Button>
+            )}
           </div>
         </div>
         <div className="border-t border-border bg-muted/20 px-5 py-2.5 flex flex-wrap items-center gap-2 text-[11px]">
@@ -250,8 +294,8 @@ export function DocumentDetailView() {
       </Card>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="w-full">
-        <div className="border-b border-border bg-card rounded-t-xl px-1 -mb-px">
-          <TabsList className="h-9 w-full justify-start gap-0 bg-transparent p-0 rounded-none">
+        <div className="border-b border-border bg-card rounded-t-xl px-1 -mb-px overflow-x-auto scroll-thin">
+          <TabsList className="h-9 w-max min-w-full justify-start gap-0 bg-transparent p-0 rounded-none">
             <TabsTrigger value="overview" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-3 text-xs font-medium"><ShieldCheck className="h-3.5 w-3.5" />Overview</TabsTrigger>
             <TabsTrigger value="findings" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-3 text-xs font-medium">
               <ScanLine className="h-3.5 w-3.5" />Findings
@@ -270,18 +314,15 @@ export function DocumentDetailView() {
         </TabsContent>
 
         <TabsContent value="findings" className="mt-4">
-          <Card className="p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold">Findings</h3>
-                <p className="text-xs text-muted-foreground">{inputFindings.length} input · {outputFindings.length} output</p>
-              </div>
-              {inputFindings.length > 0 && !doc.sanitizedContent && (
-                <Button size="sm" variant="outline" onClick={() => setTab("diff")} className="gap-1.5">Sanitize <ArrowRight className="h-3.5 w-3.5" /></Button>
-              )}
-            </div>
-            <FindingsTable findings={inputFindings} emptyHint="No findings." />
-          </Card>
+          <FindingsPanel
+            doc={doc}
+            inputFindings={inputFindings}
+            outputFindings={outputFindings}
+            busy={busy}
+            onSanitize={(policy, actions) => runSanitize(policy, actions)}
+            onScan={(config) => runScan(config)}
+            onJumpSanitize={() => setTab("diff")}
+          />
         </TabsContent>
 
         <TabsContent value="diff" className="mt-4">
@@ -399,7 +440,7 @@ function OverviewTab({ doc, inputFindings, categoryCounts, outputFindings }: {
             <div className="mt-3 rounded-lg border border-border bg-muted/40 p-3 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Risk delta</span>
-                <span className="font-mono font-semibold text-[var(--risk-safe)]">
+                <span className={`font-mono font-semibold ${latestTx.riskDelta >= 0 ? "text-[var(--risk-safe)]" : "text-[var(--risk-critical)]"}`}>
                   {latestTx.riskDelta >= 0 ? "−" : "+"}{Math.abs(latestTx.riskDelta)} pts
                 </span>
               </div>
@@ -433,6 +474,166 @@ function GateRow({ icon: Icon, label, status, ok }: {
 }
 
 // ---------------------------------------------------------------------------
+// Findings tab — review every detection, override its handling, tune scanning
+// ---------------------------------------------------------------------------
+
+const SCAN_FAMILIES: { key: keyof ScanConfig; label: string; hint: string }[] = [
+  { key: "pii", label: "Personal data", hint: "Emails, phones, IDs, addresses, payment data" },
+  { key: "secrets", label: "Secrets", hint: "API keys, tokens, private keys, connection strings" },
+  { key: "injections", label: "Prompt injection", hint: "Override phrases, role tricks, hidden directives" },
+  { key: "internalAssets", label: "Internal assets", hint: "Internal IPs, hosts, project names" },
+  { key: "unsafeUrls", label: "Unsafe URLs", hint: "javascript:, data:, file: schemes" },
+];
+
+function FindingsPanel({ doc, inputFindings, outputFindings, busy, onSanitize, onScan, onJumpSanitize }: {
+  doc: DocumentRecord;
+  inputFindings: Finding[];
+  outputFindings: Finding[];
+  busy: string | null;
+  onSanitize: (policy: string, actions?: FindingActionOverride[]) => void;
+  onScan: (config: ScanConfig) => void;
+  onJumpSanitize: () => void;
+}) {
+  const [overrides, setOverrides] = useState<Record<string, SanitizeAction>>({});
+  const [policy, setPolicy] = useState<string>(recommendPolicy(doc.classification));
+  const [policies, setPolicies] = useState<PolicyRule[] | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
+  const storedConfig = ((doc.metadata ?? {}) as { scanConfig?: ScanConfig }).scanConfig;
+  const [draft, setDraft] = useState<ScanConfig>({
+    pii: storedConfig?.pii ?? true,
+    secrets: storedConfig?.secrets ?? true,
+    injections: storedConfig?.injections ?? true,
+    internalAssets: storedConfig?.internalAssets ?? true,
+    unsafeUrls: storedConfig?.unsafeUrls ?? true,
+    minConfidence: storedConfig?.minConfidence ?? 0,
+  });
+
+  useEffect(() => {
+    api.getPolicies().then((ps) => setPolicies(ps.filter((p) => p.active))).catch(() => setPolicies(null));
+  }, []);
+  useEffect(() => { setOverrides({}); }, [doc.id]);
+
+  const byId = useMemo(() => new Map(inputFindings.map((f) => [f.id, f])), [inputFindings]);
+  const changed = Object.entries(overrides).filter(([id, a]) => byId.get(id) && byId.get(id)!.action !== a);
+  const scanSummary = storedConfig
+    ? SCAN_FAMILIES.filter((f) => storedConfig[f.key]).map((f) => f.label).join(" · ")
+    : "Full scan";
+
+  function applyOverrides() {
+    onSanitize(
+      policy,
+      changed.map(([id, action]) => ({ id, action }))
+    );
+  }
+
+  return (
+    <Card className="p-5">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="mr-auto min-w-0">
+          <h3 className="text-sm font-semibold flex items-center gap-1.5">
+            Findings
+            <HelpButton title="Choosing what to keep">
+              Every detection starts with the policy's action, but you can overrule any row — keep a span, mask it, redact it, or quarantine it — then sanitize with your choices. Credentials can never be kept and injections always stay quarantined: those options are locked for platform safety.
+            </HelpButton>
+          </h3>
+          <p className="text-xs text-muted-foreground">{inputFindings.length} input · {outputFindings.length} output · scan: {scanSummary}</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => { setDraft({ pii: storedConfig?.pii ?? true, secrets: storedConfig?.secrets ?? true, injections: storedConfig?.injections ?? true, internalAssets: storedConfig?.internalAssets ?? true, unsafeUrls: storedConfig?.unsafeUrls ?? true, minConfidence: storedConfig?.minConfidence ?? 0 }); setScanOpen(true); }} className="h-8 gap-1.5 text-xs">
+          <ScanLine className="h-3.5 w-3.5" /> Scan options
+        </Button>
+        {inputFindings.length > 0 && !doc.sanitizedContent && changed.length === 0 && (
+          <Button size="sm" variant="outline" onClick={onJumpSanitize} className="h-8 gap-1.5 text-xs">Sanitize <ArrowRight className="h-3.5 w-3.5" /></Button>
+        )}
+      </div>
+
+      {changed.length > 0 && (
+        <div className="mb-3 flex flex-col gap-2 rounded-lg border border-primary/25 bg-primary/5 p-3 sm:flex-row sm:items-center">
+          <p className="text-xs flex-1">
+            <span className="font-semibold">{changed.length} custom choice{changed.length !== 1 ? "s" : ""}</span>
+            <span className="text-muted-foreground"> — applied on top of the policy at sanitize time and recorded in the audit trail.</span>
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={policy} onValueChange={setPolicy}>
+              <SelectTrigger className="h-8 w-full text-xs min-[480px]:w-[168px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(policies ?? []).map((p) => (
+                  <SelectItem key={p.id} value={p.name}>{policyDisplayName(p.name)}</SelectItem>
+                ))}
+                {policies && !policies.some((p) => p.name === policy) && (
+                  <SelectItem value={policy}>{policyDisplayName(policy)}</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+            <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setOverrides({})}>Reset</Button>
+            <Button size="sm" className="h-8 text-xs gap-1.5 max-w-full" disabled={!!busy} onClick={applyOverrides}>
+              {busy === "sanitize" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+              Sanitize with my choices
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <FindingsTable
+        findings={inputFindings}
+        emptyHint="No findings — nothing detected under the current scan options."
+        overrideActions={overrides}
+        onOverrideAction={(id, action) => setOverrides((prev) => ({ ...prev, [id]: action }))}
+      />
+
+      <Dialog open={scanOpen} onOpenChange={setScanOpen}>
+        <DialogContent className="max-w-md sm:max-w-md">
+          <DialogHeader><DialogTitle className="text-sm tracking-tight">Scan options</DialogTitle></DialogHeader>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Choose which detector families run on this document. Output DLP always scans everything regardless — first-pass scanning is the only thing being tuned.
+          </p>
+          <div className="space-y-2.5">
+            {SCAN_FAMILIES.map((f) => (
+              <div key={f.key} className="flex items-center gap-3 rounded-lg border border-border p-2.5">
+                <Switch
+                  checked={draft[f.key] as boolean}
+                  onCheckedChange={(v) => setDraft((d) => ({ ...d, [f.key]: v }))}
+                  aria-label={f.label}
+                  className="shrink-0"
+                />
+                <div className="min-w-0">
+                  <div className="text-xs font-medium">{f.label}</div>
+                  <div className="text-[11px] text-muted-foreground">{f.hint}</div>
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center gap-3 rounded-lg border border-border p-2.5">
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-medium flex items-center gap-1.5">
+                  Minimum confidence
+                  <HelpButton title="Confidence floor">Detections below this confidence are dropped before sanitization. Raise it to reduce noise; lower it to catch more edge cases.</HelpButton>
+                </div>
+                <div className="text-[11px] text-muted-foreground">Drop findings below this confidence</div>
+              </div>
+              <Select value={String(draft.minConfidence ?? 0)} onValueChange={(v) => setDraft((d) => ({ ...d, minConfidence: Number(v) }))}>
+                <SelectTrigger className="h-8 w-[110px] text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Any (0%)</SelectItem>
+                  <SelectItem value="0.5">Low (50%)</SelectItem>
+                  <SelectItem value="0.7">Medium (70%)</SelectItem>
+                  <SelectItem value="0.9">High (90%)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setScanOpen(false)}>Cancel</Button>
+            <Button size="sm" disabled={!!busy} onClick={() => { setScanOpen(false); onScan(draft); }} className="gap-1.5">
+              {busy === "scan" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanLine className="h-3.5 w-3.5" />}
+              Re-scan with these options
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Sanitize tab
 // ---------------------------------------------------------------------------
 
@@ -442,18 +643,31 @@ function SanitizeTab({ doc, busy, onSanitize }: {
   onSanitize: (policy: string) => void;
 }) {
   const [policy, setPolicy] = useState<string>(recommendPolicy(doc.classification));
+  const [policies, setPolicies] = useState<PolicyRule[] | null>(null);
+  useEffect(() => {
+    api.getPolicies().then((ps) => setPolicies(ps.filter((p) => p.active))).catch(() => setPolicies(null));
+  }, []);
+  const options = policies ?? Object.entries(POLICY_LABELS).map(([name, label]) => ({ id: name, name, description: label }));
   return (
     <div className="space-y-4">
       <Card className="p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="space-y-2 sm:max-w-md flex-1">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Policy</Label>
+          <div className="space-y-2 sm:max-w-md flex-1 min-w-0">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              Policy
+              <HelpButton title="Choosing a policy">
+                The policy decides what happens to each finding before the model sees anything: masked spans are partially hidden, removed spans fully redacted, blocked secrets force-removed, and injection spans quarantined. Pick the profile matching your audience — including your own custom policies.
+              </HelpButton>
+            </Label>
             <Select value={policy} onValueChange={setPolicy}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9 w-full max-w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {Object.entries(POLICY_LABELS).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>{v}</SelectItem>
+                {options.map((p) => (
+                  <SelectItem key={p.id ?? p.name} value={p.name}>{policies ? policyDisplayName(p.name) : p.description}</SelectItem>
                 ))}
+                {policies && !policies.some((p) => p.name === policy) && (
+                  <SelectItem value={policy}>{policyDisplayName(policy)}</SelectItem>
+                )}
               </SelectContent>
             </Select>
             <p className="text-[11px] text-muted-foreground">Applied before model access.</p>
@@ -505,7 +719,7 @@ function TransformTab({ doc, busy, onTransform, onBatch }: {
   onTransform: (profile: TransformationProfile, outputType: OutputType, params?: Record<string, string>) => void;
   onBatch?: (profile: TransformationProfile, outputTypes: OutputType[], params?: Record<string, string>) => void;
 }) {
-  const [profile, setProfile] = useState<TransformationProfile>(recommendProfile(doc.classification));
+  const [profile, setProfile] = useState<string>(recommendProfile(doc.classification));
   const [tone, setTone] = useState<string>("professional");
   const [language, setLanguage] = useState<string>("en");
   const [detailLevel, setDetailLevel] = useState<string>("standard");
@@ -513,8 +727,50 @@ function TransformTab({ doc, busy, onTransform, onBatch }: {
   const [style, setStyle] = useState<string>("structured");
   const [selectedTypes, setSelectedTypes] = useState<OutputType[]>(["EXECUTIVE_SUMMARY"]);
   const [viewTxId, setViewTxId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [txPolicies, setTxPolicies] = useState<PolicyRule[] | null>(null);
+  useEffect(() => {
+    api.getPolicies().then((ps) => setTxPolicies(ps.filter((p) => p.active))).catch(() => setTxPolicies(null));
+  }, []);
   const transformations = doc.transformations ?? [];
   const activeTx = viewTxId ? transformations.find((t) => t.id === viewTxId) ?? transformations[0] : transformations[0];
+
+  useEffect(() => { setCopied(false); }, [activeTx?.id]);
+
+  async function handleCopyOutput() {
+    if (!activeTx?.outputContent) return;
+    try {
+      await navigator.clipboard.writeText(activeTx.outputContent);
+    } catch {
+      // Fallback for non-secure contexts where the async Clipboard API is unavailable
+      const ta = document.createElement("textarea");
+      ta.value = activeTx.outputContent;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch { /* ignore */ }
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    toast.success("Copied to clipboard", { description: `${OUTPUT_LABELS[activeTx.outputType]} ready to paste.` });
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleDownloadOutput() {
+    if (!activeTx?.outputContent) return;
+    const safe = doc.title.replace(/[^\w\-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "output";
+    const blob = new Blob([activeTx.outputContent], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safe}-${activeTx.outputType.toLowerCase().replace(/_/g, "-")}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast.success("Download started", { description: a.download });
+  }
 
   const toggleType = (t: OutputType) => {
     setSelectedTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t].slice(0, 8));
@@ -522,8 +778,9 @@ function TransformTab({ doc, busy, onTransform, onBatch }: {
 
   const handleSingleGenerate = () => {
     const primary = selectedTypes[0] ?? "EXECUTIVE_SUMMARY";
-    if (selectedTypes.length > 1 && onBatch) onBatch(profile, selectedTypes, { tone, language, detailLevel, objective, style });
-    else onTransform(profile, primary, { tone, language, detailLevel, objective, style });
+    // Custom policy names are validated server-side; the cast keeps the built-in type surface.
+    if (selectedTypes.length > 1 && onBatch) onBatch(profile as TransformationProfile, selectedTypes, { tone, language, detailLevel, objective, style });
+    else onTransform(profile as TransformationProfile, primary, { tone, language, detailLevel, objective, style });
   };
 
   return (
@@ -531,8 +788,13 @@ function TransformTab({ doc, busy, onTransform, onBatch }: {
       <Card className="p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-sm font-semibold tracking-tight flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> Configurable Transformation</h3>
-            <p className="text-xs text-muted-foreground">Select deliverable(s) and fine-tune generation parameters. Source is the sanitized working copy only.</p>
+            <h3 className="text-sm font-semibold tracking-tight flex items-center gap-1.5">
+              <Sparkles className="h-4 w-4 text-primary" /> Configurable Transformation
+              <HelpButton title="Generation controls">
+                Source is always the sanitized working copy — never raw content. Tune audience, tone, language, detail, objective, and style per artefact. You can batch up to 8 outputs at once; each is validated independently before delivery.
+              </HelpButton>
+            </h3>
+            <p className="text-xs text-muted-foreground">Select deliverable(s) and fine-tune generation. Source is the sanitized copy only.</p>
           </div>
           <div className="hidden sm:flex items-center gap-2 text-[11px] text-muted-foreground">
             <span className="rounded-full border bg-muted px-2 py-1">{selectedTypes.length} artefact{selectedTypes.length !== 1 ? "s" : ""} selected</span>
@@ -542,15 +804,18 @@ function TransformTab({ doc, busy, onTransform, onBatch }: {
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">Target Audience (Profile)</Label>
-            <Select value={profile} onValueChange={(v) => setProfile(v as TransformationProfile)}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+            <Select value={profile} onValueChange={setProfile}>
+              <SelectTrigger className="h-9 w-full max-w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {Object.entries(POLICY_LABELS).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>{v}</SelectItem>
+                {(txPolicies ?? Object.entries(POLICY_LABELS).map(([name, description]) => ({ id: name, name }))).map((p: any) => (
+                  <SelectItem key={p.id ?? p.name} value={p.name}>{txPolicies ? policyDisplayName(p.name) : POLICY_LABELS[p.name]}</SelectItem>
                 ))}
+                {txPolicies && !txPolicies.some((p) => p.name === profile) && (
+                  <SelectItem value={profile}>{policyDisplayName(profile)}</SelectItem>
+                )}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground">Controls allow/mask/remove/block before LLM.</p>
+            <p className="text-[11px] text-muted-foreground">Controls allow/mask/remove/block before model access.</p>
           </div>
           <div className="space-y-2">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">Tone</Label>
@@ -637,10 +902,9 @@ function TransformTab({ doc, busy, onTransform, onBatch }: {
             {Object.entries(OUTPUT_LABELS).map(([k, v]) => {
               const checked = selectedTypes.includes(k as OutputType);
               return (
-                <label key={k} className={`flex items-center gap-2 rounded-lg border p-2.5 cursor-pointer transition-colors ${checked ? "bg-primary/5 border-primary/30" : "bg-card hover:bg-muted/50"}`}>
+                <label key={k} className={`flex items-center gap-2 rounded-lg border p-2.5 cursor-pointer transition-colors ${checked ? "bg-primary/10 border-primary/30" : "bg-card hover:bg-muted/50"}`}>
                   <input type="checkbox" checked={checked} onChange={() => toggleType(k as OutputType)} className="h-4 w-4 rounded border-input accent-primary" />
                   <span className="text-xs font-medium">{v}</span>
-                  <span className="ml-auto font-mono text-[10px] text-muted-foreground">{k}</span>
                 </label>
               );
             })}
@@ -678,13 +942,21 @@ function TransformTab({ doc, busy, onTransform, onBatch }: {
             <div>
               <h3 className="text-sm font-semibold">Generated artefacts — {transformations.length} deliverable{transformations.length !== 1 ? "s" : ""}</h3>
               <p className="text-xs text-muted-foreground">
-                {OUTPUT_LABELS[activeTx.outputType]} · {POLICY_LABELS[activeTx.profile]} · {activeTx.model}
+                {OUTPUT_LABELS[activeTx.outputType]} · {policyDisplayName(activeTx.profile)} · {activeTx.model}
                 {activeTx.tone ? ` · ${activeTx.tone} · ${activeTx.language} · ${activeTx.detailLevel}` : ""}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <ValidationBadge status={activeTx.outputDlp} />
               <ValidationBadge status={activeTx.grounding} />
+              <Button variant="outline" size="sm" onClick={handleCopyOutput} className="h-7 gap-1.5 text-xs font-medium">
+                {copied ? <Check className="h-3.5 w-3.5 text-[var(--risk-safe)]" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleDownloadOutput} className="h-7 gap-1.5 text-xs font-medium">
+                <Download className="h-3.5 w-3.5" />
+                Download
+              </Button>
             </div>
           </div>
           {transformations.length > 1 && (
@@ -832,7 +1104,7 @@ function ReportTab({ documentId }: { documentId: string }) {
                       <span className="font-medium">{f.type.replace(/_/g, " ")}</span>
                       <span className="font-mono text-[10px] text-muted-foreground">{Math.round(f.confidence * 100)}%</span>
                     </div>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-2">{f.reason}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-2" title={f.reason}>{f.reason}</p>
                   </div>
                 </div>
               ))
@@ -910,7 +1182,7 @@ function IntelligenceTab({ documentId }: { documentId: string }) {
   }, [documentId]);
 
   if (loading) return <Card className="p-5"><Skeleton className="h-64 rounded-lg" /></Card>;
-  if (error) return <Card className="p-5 text-sm text-red-600">Failed to load intelligence: {error}</Card>;
+  if (error) return <Card className="p-5 text-sm text-destructive">Failed to load intelligence: {error}</Card>;
   if (!data) return <Card className="p-5 text-sm text-muted-foreground">No intelligence report.</Card>;
 
   return (
@@ -1042,7 +1314,7 @@ function HistoryTab({ documentId, transformations }: {
                   <div className="flex items-center gap-2 text-xs">
                     <span className="font-medium">{OUTPUT_LABELS[t.outputType]}</span>
                     <span className="text-muted-foreground">·</span>
-                    <span className="text-muted-foreground">{POLICY_LABELS[t.profile]}</span>
+                    <span className="text-muted-foreground">{policyDisplayName(t.profile)}</span>
                     <span className="text-muted-foreground">·</span>
                     <span className="font-mono text-[10px]">{t.model}</span>
                   </div>

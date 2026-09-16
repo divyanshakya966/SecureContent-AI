@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
     db.document.findMany({
       orderBy: { createdAt: "desc" },
       take: 14,
-      select: { title: true, riskBefore: true, riskAfter: true, createdAt: true },
+      select: { title: true, riskBefore: true, riskAfter: true, createdAt: true, status: true },
     }),
     db.document.groupBy({ by: ["classification"], _count: true }),
     db.intelligenceReport.findMany({ select: { entities: true, iocs: true, ttps: true } }),
@@ -65,8 +65,10 @@ export async function GET(req: NextRequest) {
 
   const releasedTransformations = await db.transformation.count({ where: { outputDlp: "PASS" } });
 
+  // Include fully-cleaned docs (riskAfter = 0) — the old `gt: 0` filter dropped
+  // exactly the best results (e.g. 7 → 0) from the average.
   const reducedDocs = await db.document.findMany({
-    where: { riskAfter: { gt: 0 } },
+    where: { status: { in: ["SANITIZED", "TRANSFORMED"] } },
     select: { riskBefore: true, riskAfter: true },
   });
   const avgRiskReduction = reducedDocs.length
@@ -87,15 +89,20 @@ export async function GET(req: NextRequest) {
     count: c._count,
   }));
 
+  // For docs not yet sanitized (SCANNED), riskAfter is still the 0 placeholder —
+  // show after = before so the chart doesn't fake a full reduction.
   const riskTrend = docsForTrend
     .slice()
     .reverse()
-    .map((d, i) => ({
-      label: `D${i + 1}`,
-      title: d.title,
-      before: d.riskBefore,
-      after: d.riskAfter,
-    }));
+    .map((d, i) => {
+      const done = d.status === "SANITIZED" || d.status === "TRANSFORMED" || d.status === "BLOCKED";
+      return {
+        label: `D${i + 1}`,
+        title: d.title,
+        before: d.riskBefore,
+        after: done ? d.riskAfter : d.riskBefore,
+      };
+    });
 
   let totalEntities = 0;
   let totalIOCs = 0;

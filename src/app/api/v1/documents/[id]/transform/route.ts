@@ -68,11 +68,17 @@ export async function POST(
   const policy = await getPolicyByName(profile);
   if (!policy) return NextResponse.json({ error: "Unknown policy." }, { status: 400, headers: rateLimitHeaders(rl, 10) });
 
-  // Enforce sanitize-before-transform. If no sanitized copy exists, create one on
-  // the fly with the requested profile so we never send raw injection/secret
-  // content to the LLM even if the caller skipped the explicit sanitize step.
+  // Enforce sanitize-before-transform. If no sanitized copy exists — or the
+  // stored copy was produced under a DIFFERENT profile — (re)sanitize with the
+  // requested profile so we never send mismatched-policy content to the model.
+  let storedPolicy: string | null = null;
+  try {
+    storedPolicy = (JSON.parse(doc.metadata ?? "{}") as { sanitizedPolicy?: string }).sanitizedPolicy ?? null;
+  } catch {
+    storedPolicy = null;
+  }
   let workingContent = doc.sanitizedContent;
-  if (!workingContent) {
+  if (!workingContent || storedPolicy !== profile) {
     // Cheap on-the-fly sanitize: compute findings from rawContent and apply policy.
     // This still requires the DB findings to exist (they do since upload scans).
     const findingsFromDb = await db.finding.findMany({ where: { documentId: id, stage: "INPUT" } });
@@ -107,20 +113,29 @@ export async function POST(
     }
     const residualFindings = (await import("@/lib/security")).scanContent(san.sanitizedContent);
     const residualRisk = riskFn(residualFindings);
+    let transformMeta: Record<string, unknown> = {};
+    try {
+      transformMeta = JSON.parse(doc.metadata ?? "{}");
+    } catch {
+      transformMeta = {};
+    }
+    transformMeta.sanitizedPolicy = policy.name;
+    transformMeta.sanitizedAt = new Date().toISOString();
     await db.document.update({
       where: { id },
       data: {
         sanitizedContent: san.sanitizedContent,
         status: "SANITIZED",
         riskAfter: residualRisk.total,
+        metadata: JSON.stringify(transformMeta),
       },
     });
-    // Persist finding action updates for audit parity
+    // Persist finding action updates for audit parity (INPUT stage only)
     if (san.actions.length) {
       await db.$transaction(
         san.actions.map((a) => {
           const loc = `char_offset:${a.finding.start}-${a.finding.end}`;
-          return db.finding.updateMany({ where: { documentId: id, location: loc }, data: { action: a.action, reason: a.reason } });
+          return db.finding.updateMany({ where: { documentId: id, stage: "INPUT", location: loc }, data: { action: a.action, reason: a.reason } });
         })
       ).catch(() => {});
     }
@@ -128,13 +143,16 @@ export async function POST(
       documentId: id,
       actor: "policy_engine",
       action: "POLICY_APPLY",
-      detail: `Auto-sanitized on transform via "${policy.name}" — ${san.actions.length} actions, residual risk ${residualRisk.total}/100.`,
+      detail: storedPolicy && storedPolicy !== policy.name
+        ? `Re-sanitized on transform (working copy was "${storedPolicy}", requested "${policy.name}") — ${san.actions.length} actions, residual risk ${residualRisk.total}/100.`
+        : `Auto-sanitized on transform via "${policy.name}" — ${san.actions.length} actions, residual risk ${residualRisk.total}/100.`,
     });
     workingContent = san.sanitizedContent;
   }
 
   const transformations: ReturnType<typeof serializeTransformation>[] = [];
   const dlpReasons: string[] = [];
+  const itemErrors: { outputType: OutputType; error: string }[] = [];
   const createdIds: string[] = [];
 
   for (const outType of requestedTypes) {
@@ -143,6 +161,7 @@ export async function POST(
     let citations: { claim: string; evidence: string; grounded: boolean }[] = [];
     let grounding: "PASS" | "FAIL" | "SKIPPED" = "SKIPPED";
     let outputDlp: "PASS" | "FAIL" = "FAIL";
+    let policyStatus: "PASS" | "FAIL" = "FAIL";
     let leakageCount = 0;
 
     try {
@@ -177,14 +196,24 @@ export async function POST(
       }
       const finalSan = sanitizeOutputHtml(outputContent);
       if (finalSan.removed.length) outputContent = finalSan.sanitized;
+      // Policy compliance mirrors validation: a first-pass DLP failure or
+      // ungrounded citations means the raw output did not satisfy policy,
+      // even though the repaired copy is what gets released.
+      policyStatus = outputDlp === "PASS" && grounding !== "FAIL" ? "PASS" : "FAIL";
     } catch (e: unknown) {
       console.error("[transform]", e);
       const msg = e instanceof Error ? e.message : "Transformation failed";
       const isConfigError = msg.includes("sanitizedContent is empty") || msg.includes("Transformation unavailable") || msg.includes("GEMINI_API_KEY") || msg.includes("ALLOW_OFFLINE_MOCK");
-      return NextResponse.json(
-        { error: isConfigError ? msg : `Transformation failed for ${outType} — please try again.` },
-        { status: isConfigError ? 503 : 502, headers: rateLimitHeaders(rl, 10) }
-      );
+      // Batch resilience: record the failure and continue with remaining types
+      // instead of discarding already-generated artefacts.
+      itemErrors.push({ outputType: outType, error: isConfigError ? msg : `Transformation failed for ${outType} — please try again.` });
+      await logAudit({
+        documentId: id,
+        actor: "llm_adapter",
+        action: "TRANSFORM",
+        detail: `Failed ${outType} via "${profile}": ${msg}`,
+      });
+      continue;
     }
 
     const outputFindings = scanContent(outputContent);
@@ -199,7 +228,7 @@ export async function POST(
         model,
         outputContent,
         grounding,
-        policyStatus: "PASS",
+        policyStatus,
         outputDlp,
         riskDelta,
         leakageCount,
@@ -239,6 +268,18 @@ export async function POST(
     }
   }
 
+  // If every requested type failed, surface the failure; otherwise release
+  // the partial batch and report per-item errors additively.
+  if (transformations.length === 0) {
+    const first = itemErrors[0];
+    const msg = first?.error ?? "Transformation failed — please try again.";
+    const isConfigError = msg.includes("sanitizedContent is empty") || msg.includes("Transformation unavailable") || msg.includes("GEMINI_API_KEY") || msg.includes("ALLOW_OFFLINE_MOCK");
+    return NextResponse.json(
+      { error: requestedTypes.length > 1 ? `All ${requestedTypes.length} transformations failed. ${msg}` : msg, errors: itemErrors },
+      { status: isConfigError ? 503 : 502, headers: rateLimitHeaders(rl, 10) }
+    );
+  }
+
   await db.document.update({
     where: { id },
     data: { status: "TRANSFORMED" },
@@ -258,6 +299,7 @@ export async function POST(
       transformations,
       dlpReasons,
       batchId,
+      ...(itemErrors.length ? { errors: itemErrors } : {}),
     },
     { headers: rateLimitHeaders(rl, 10) }
   );

@@ -23,13 +23,19 @@ import type { RawFinding } from "@/lib/security/detectors";
 const ENTITY_PATTERNS: { type: ExtractedEntity["type"]; re: RegExp; confidence: number }[] = [
   { type: "EMAIL", re: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, confidence: 0.97 },
   { type: "PHONE", re: /(?:\+91[-.\s]?)?[6-9]\d{4}[-.\s]?\d{5}/g, confidence: 0.85 },
+  { type: "PHONE", re: /\b(?:\+1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g, confidence: 0.82 },
+  { type: "PHONE", re: /\+44[-.\s]?\d{4}[-.\s]?\d{3}[-.\s]?\d{3}/g, confidence: 0.82 },
   { type: "IP", re: /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/g, confidence: 0.9 },
+  { type: "IP", re: /(?:\b(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}\b|\b::1\b)/g, confidence: 0.85 },
   { type: "URL", re: /\bhttps?:\/\/[^\s"']+/gi, confidence: 0.92 },
-  { type: "DATE", re: /\b(?:\d{1,2}[-/\s](?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-/\s]\d{4}|\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})\b/gi, confidence: 0.82 },
-  { type: "ID", re: /\b(?:EMP|EMP-|ID-|EID-|CVE-\d{4}-\d{4,7})\S*/gi, confidence: 0.78 },
+  { type: "DATE", re: /\b(?:\d{1,2}[-/\s](?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-/\s]\d{4}|\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}|\d{1,2}[-/.]\d{1,2}[-/.](?:19|20)\d{2})\b/gi, confidence: 0.82 },
+  { type: "ID", re: /\b(?:EMP|EMP-|ID-|EID-|STAFF-|CVE-\d{4}-\d{4,7})\S*/gi, confidence: 0.78 },
+  { type: "ID", re: /\b[A-Z]{5}\d{4}[A-Z]\b/g, confidence: 0.85 },
+  { type: "ID", re: /\b(?!000|666|9\d{2})\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b/g, confidence: 0.88 },
+  { type: "ID", re: /\b[A-Z]{4}0[A-Z0-9]{6}\b/g, confidence: 0.85 },
 ];
 
-const PERSON_ORG_RE = /(?:Project Lead|Engineer|Lead|Manager|Analyst|Officer|Member|Director|Architect|Team)\s*[:\-]?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})/g;
+const PERSON_ORG_RE = /(?:Project Lead|Engineer|Lead|Manager|Analyst|Officer|Member|Director|Architect|Team|Contact|Author|Owner|Reporter|Supervisor|Coordinator|Administrator|Customer|Client|Candidate|Recruiter|Prepared by|Reported by|Full Name|Name|POC)\s*[:\-]?\s*([A-Z][a-z]+(?:['-][A-Za-z]+)?(?:\s+[A-Z][a-z]+(?:['-][A-Za-z]+)?){1,2})/g;
 const ORG_RE = /\b(?:Team|Project|Department|Division)\s+[A-Z][a-zA-Z0-9]+\b/g;
 const LOCATION_RE = /\b(?:Mumbai|Delhi|Bengaluru|Chennai|Kolkata|Hyderabad|Pune|internal|intranet|dashboard|datacenter)\b/gi;
 

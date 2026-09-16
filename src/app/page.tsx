@@ -30,7 +30,7 @@ export default function Home() {
   }, [setPersona]);
 
   return (
-    <div className="flex min-h-screen w-full bg-[#fcfcfc] dark:bg-background">
+    <div className="flex min-h-screen w-full bg-background">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 z-50 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground shadow-lg"
@@ -40,7 +40,7 @@ export default function Home() {
       <Sidebar />
       <div className="flex min-h-screen flex-1 flex-col min-w-0 bg-background">
         <Topbar />
-        <main id="main-content" className="flex-1 overflow-x-hidden bg-[#f8f9f8] dark:bg-muted/20">
+        <main id="main-content" className="flex-1 overflow-x-hidden bg-muted/40 dark:bg-muted/20">
           <div className="mx-auto w-full max-w-[1440px] px-4 py-6 md:px-6 md:py-6">
             {view === "dashboard" && <DashboardView />}
             {view === "upload" && <UploadView />}
@@ -58,7 +58,7 @@ export default function Home() {
             <div className="flex items-center gap-3">
               <span className="font-mono font-medium">SecureContent AI</span>
               <span className="hidden sm:inline h-3 w-px bg-border" />
-              <span className="hidden sm:inline text-muted-foreground">© 2026 · Policy-aware content security platform</span>
+              <span className="hidden sm:inline text-muted-foreground">© {new Date().getFullYear()} · Policy-aware content security platform</span>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">
               <span className="hidden md:inline-flex items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-1 text-[11px] font-medium">

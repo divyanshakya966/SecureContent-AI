@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
+  // Keep native/WASM deps external in standalone so worker paths (tesseract, sharp) resolve correctly
+  // and avoid bundler capturing `src/worker-script/node/index.js` as /ROOT/...
+  serverExternalPackages: ["sharp", "tesseract.js", "jszip", "pdf-parse", "mammoth"],
   typescript: {
     ignoreBuildErrors: false,
   },

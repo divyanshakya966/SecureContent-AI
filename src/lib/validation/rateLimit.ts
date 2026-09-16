@@ -7,6 +7,23 @@ type Bucket = { count: number; resetAt: number };
 
 const buckets = new Map<string, Bucket>();
 
+/** Hard cap so a flood of distinct keys (e.g. spoofed IPs) can't grow memory unbounded. */
+const MAX_BUCKETS = 10_000;
+
+function evictIfNeeded(now: number): void {
+  if (buckets.size < MAX_BUCKETS) return;
+  // First drop expired buckets…
+  for (const [k, v] of buckets.entries()) {
+    if (now > v.resetAt) buckets.delete(k);
+    if (buckets.size < MAX_BUCKETS) return;
+  }
+  // …then oldest-inserted (Map preserves insertion order).
+  for (const k of buckets.keys()) {
+    buckets.delete(k);
+    if (buckets.size < MAX_BUCKETS) return;
+  }
+}
+
 export interface RateLimitOpts {
   windowMs?: number; // default 60_000
   max?: number; // default 30
@@ -18,6 +35,7 @@ export function checkRateLimit(key: string, opts: RateLimitOpts = {}): { allowed
   const max = opts.max ?? 30;
   const b = buckets.get(key);
   if (!b || now > b.resetAt) {
+    evictIfNeeded(now);
     buckets.set(key, { count: 1, resetAt: now + windowMs });
     return { allowed: true, remaining: max - 1, resetMs: windowMs };
   }

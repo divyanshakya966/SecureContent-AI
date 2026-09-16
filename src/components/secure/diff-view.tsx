@@ -23,7 +23,7 @@ export function DiffView({ before, after, beforeLabel = "Raw input", afterLabel 
     return (
       <div className="rounded-lg border border-dashed bg-muted/20 p-8 text-center">
         <p className="text-sm font-medium">No readable text extracted</p>
-        <p className="mx-auto mt-1 max-w-[48ch] text-xs leading-relaxed text-muted-foreground">The file contained no extractable text after sanitization. For scanned PDFs/images, enable the Docling worker (see docs/ingestion.md) or upload a text-based PDF/DOCX.</p>
+        <p className="mx-auto mt-1 max-w-[48ch] text-xs leading-relaxed text-muted-foreground">The file contained no extractable text after sanitization. For scanned PDFs or images, enable enhanced OCR in your workspace settings or upload a text-based PDF/DOCX.</p>
       </div>
     );
   }

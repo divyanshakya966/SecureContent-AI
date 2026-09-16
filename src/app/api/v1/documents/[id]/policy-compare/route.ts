@@ -50,6 +50,12 @@ export async function POST(
       };
     });
 
+  // Live-scan fallback: documents ingested before finding persistence (or with
+  // wiped findings) would otherwise compare against risk 0 — misleading.
+  if (rawFindings.length === 0 && doc.rawContent?.trim()) {
+    rawFindings.push(...scanContent(doc.rawContent));
+  }
+
   const initialRisk = computeRisk(rawFindings).total;
 
   const items: PolicyCompareItem[] = [];
@@ -70,8 +76,10 @@ export async function POST(
     items.push({
       profile: profile as PolicyCompareItem["profile"],
       audience: (policy as unknown as { audience?: string }).audience ?? policy.classification ?? profile,
-      sanitizedPreview: sanitized.sanitizedContent.slice(0, 400),
-      sanitizedContent: sanitized.sanitizedContent,
+      // Never ship raw content through the compare API: when blocked, the
+      // sanitizer returns the source verbatim, so substitute a placeholder.
+      sanitizedPreview: sanitized.blocked ? "— BLOCKED —" : sanitized.sanitizedContent.slice(0, 400),
+      sanitizedContent: sanitized.blocked ? "" : sanitized.sanitizedContent,
       findingsRedacted: sanitized.actions.length,
       riskBefore: initialRisk,
       riskAfter: sanitized.blocked ? initialRisk : residualRisk,

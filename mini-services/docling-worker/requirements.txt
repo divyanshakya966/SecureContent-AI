@@ -5,8 +5,12 @@
 fastapi==0.115.*
 uvicorn[standard]==0.34.*
 python-multipart==0.0.*
-# Optional — uncomment to enable:
-# docling==2.*
-# pymupdf==1.24.*
-# pdfminer.six==20240706
-# python-docx==1.1.*
+# Optional — uncomment to enable (install as needed):
+# docling==2.*                # best quality, includes layout + OCR
+# pymupdf==1.24.*              # fast PDF text + OCR fallback
+# pdfminer.six==20240706       # pure-python PDF fallback
+# python-docx==1.1.*           # DOCX fallback
+# python-pptx==0.6.*           # PPTX slide text
+# pillow==11.*                 # image handling for OCR
+# pytesseract==0.3.*           # wrapper for system tesseract-ocr
+# System package also required for OCR: sudo dnf install tesseract tesseract-langpack-eng  |  sudo apt install tesseract-ocr

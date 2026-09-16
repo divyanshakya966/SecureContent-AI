@@ -10,14 +10,14 @@ export function HelpLegend() {
 
   return (
     <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
-      <DialogContent className="max-w-xl max-h-[82vh] overflow-auto">
+      <DialogContent className="max-w-xl sm:max-w-xl max-h-[82vh] overflow-auto">
         <DialogHeader>
           <DialogTitle className="text-sm tracking-tight">Reference</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 pt-2">
           <Card className="p-4">
             <div className="text-xs font-semibold tracking-tight">Pipeline</div>
-            <div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-muted-foreground">
+            <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-muted-foreground">
               <div className="rounded-md border bg-muted/20 p-2 text-center"><div className="font-semibold text-foreground">Ingest</div><div className="mt-1">Validate + parse</div></div>
               <div className="rounded-md border bg-muted/20 p-2 text-center"><div className="font-semibold text-foreground">Scan</div><div className="mt-1">PII / secrets / injection</div></div>
               <div className="rounded-md border bg-muted/20 p-2 text-center"><div className="font-semibold text-foreground">Sanitize</div><div className="mt-1">Policy → working copy</div></div>

@@ -21,6 +21,8 @@ export interface SanitizeActionRecord {
   finding: RawFinding;
   action: SanitizeAction;
   reason: string;
+  /** True when a reviewer override (not the policy bucket) decided the action. */
+  overridden?: boolean;
 }
 
 export interface SanitizeOutput {
@@ -30,13 +32,48 @@ export interface SanitizeOutput {
   blockReason?: string;
 }
 
+/**
+ * Reviewer-chosen actions keyed by finding identity.
+ * Enforced invariants (defense in depth — the API validates these too):
+ * - PROMPT_INJECTION can never be ALLOWed; ALLOW degrades to QUARANTINE.
+ * - SECRET findings can never be ALLOWed; ALLOW degrades to REDACT.
+ */
+export type FindingOverrides = Map<string, SanitizeAction>;
+
+export function overrideKeyForFinding(f: Pick<RawFinding, "start" | "end" | "type">): string {
+  return `char_offset:${f.start}-${f.end}|${f.type}`;
+}
+
 // Map a finding to the action the policy wants applied.
 function bucketForFinding(
   finding: RawFinding,
-  policy: PolicyRule
+  policy: PolicyRule,
+  overrides?: FindingOverrides
 ): SanitizeAction {
+  // Reviewer override wins over buckets — except it can never weaken the two
+  // hard invariants below.
+  if (overrides) {
+    const key = overrideKeyForFinding(finding);
+    const chosen = overrides.get(key);
+    if (chosen) {
+      if (chosen === "ALLOW") {
+        if (finding.category === "PROMPT_INJECTION") return "QUARANTINE";
+        if (finding.category === "SECRET") return "REDACT";
+      }
+      if (finding.category === "PROMPT_INJECTION" && chosen !== "QUARANTINE" && chosen !== "REDACT") {
+        return "QUARANTINE";
+      }
+      return chosen;
+    }
+  }
+
   // Prompt-injection spans are ALWAYS quarantined, regardless of bucket.
   if (finding.category === "PROMPT_INJECTION") return "QUARANTINE";
+
+  // Explicit allow-list wins: listed types/categories pass through untouched.
+  if (policy.allow.includes(finding.type) || policy.allow.includes(finding.category)) {
+    return "ALLOW";
+  }
 
   if (policy.block.includes(finding.type) || policy.block.includes(finding.category)) {
     // Force-remove the span. The document can still be transformed; the
@@ -55,7 +92,8 @@ function bucketForFinding(
 export function sanitizeContent(
   content: string,
   findings: RawFinding[],
-  policy: PolicyRule
+  policy: PolicyRule,
+  overrides?: FindingOverrides
 ): SanitizeOutput {
   // Process findings from the END of the string backwards so offsets stay valid.
   const sorted = [...findings].sort((a, b) => b.start - a.start);
@@ -63,7 +101,21 @@ export function sanitizeContent(
   const actions: SanitizeActionRecord[] = [];
 
   for (const f of sorted) {
-    const action = bucketForFinding(f, policy);
+    const action = bucketForFinding(f, policy, overrides);
+    const overridden = overrides?.has(overrideKeyForFinding(f)) === true && action !== bucketForFinding(f, policy);
+    // ALLOW = pass through untouched (policy explicitly permits this type).
+    if (action === "ALLOW") {
+      actions.push({ finding: f, action, reason: `Allowed under policy "${policy.name}" — ${f.reason}`, overridden });
+      continue;
+    }
+    // Guard against stale/invalid offsets (e.g. persisted 0-0 spans): skip
+    // instead of corrupting the working copy by inserting at position 0.
+    if (!Number.isFinite(f.start) || !Number.isFinite(f.end) || f.start < 0 || f.end <= f.start || f.end > out.length + 4096) {
+      continue;
+    }
+    const start = Math.max(0, Math.min(f.start, out.length));
+    const end = Math.max(start, Math.min(f.end, out.length));
+    if (end <= start) continue;
     let replacement: string;
     let reason: string;
 
@@ -89,8 +141,13 @@ export function sanitizeContent(
         reason = f.reason;
     }
 
-    out = out.slice(0, f.start) + replacement + out.slice(f.end);
-    actions.push({ finding: f, action, reason });
+    out = out.slice(0, start) + replacement + out.slice(end);
+    actions.push({
+      finding: f,
+      action,
+      reason: overridden ? `Reviewer override under policy "${policy.name}" — ${reason}` : reason,
+      overridden,
+    });
   }
 
   actions.reverse();

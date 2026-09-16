@@ -15,8 +15,8 @@ const CATEGORY_WEIGHT: Record<string, number> = {
   PII: 1.0,
   SECRET: 1.4,
   PROMPT_INJECTION: 1.6,
-  INTERNAL_ASSET: 0.7,
-  UNSAFE_URL: 0.8,
+  INTERNAL_ASSET: 0.85,
+  UNSAFE_URL: 0.9,
 };
 
 export interface RiskBreakdown {
@@ -52,8 +52,8 @@ export function computeRisk(findings: RawFinding[]): RiskBreakdown {
     pii * 1.0 +
     secrets * 1.0 +
     promptInjection * 1.0 +
-    internalAssets * 0.6 +
-    unsafeUrls * 0.6;
+    internalAssets * 0.75 +
+    unsafeUrls * 0.75;
 
   // Mitigation credit — every REDACT / QUARANTINE / BLOCK action reduces the
   // residual risk because that span will not reach the model verbatim.
@@ -86,7 +86,7 @@ function classify(findings: RawFinding[], residualRisk: number): Classification 
   const hasCriticalSecret = findings.some(
     (f) => f.category === "SECRET" && f.severity === "CRITICAL"
   );
-  const hasGovtId = findings.some((f) => f.type === "AADHAAR" || f.type === "PAN" || f.type === "CREDIT_CARD");
+  const hasGovtId = findings.some((f) => f.type === "AADHAAR" || f.type === "PAN" || f.type === "CREDIT_CARD" || f.type === "SSN" || f.type === "PASSPORT" || f.type === "DRIVERS_LICENSE" || f.type === "BANK_ACCOUNT" || f.type === "IBAN");
 
   if (hasInjection && (hasCriticalSecret || residualRisk > 60)) return "RESTRICTED";
   if (hasCriticalSecret || hasGovtId || residualRisk >= 55) return "CONFIDENTIAL";

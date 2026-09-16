@@ -21,9 +21,9 @@ export function Stepper({ steps, onStepClick }: { steps: StepDef[]; onStepClick?
             className={cn(
               "group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors",
               s.status === "done" && "text-foreground",
-              s.status === "current" && "bg-primary/8 text-primary font-medium ring-1 ring-primary/15",
+              s.status === "current" && "bg-primary/10 text-primary font-medium ring-1 ring-primary/15",
               s.status === "upcoming" && "text-muted-foreground",
-              s.status === "blocked" && "text-[var(--risk-critical)] bg-[var(--risk-critical)]/8 ring-1 ring-[var(--risk-critical)]/20",
+              s.status === "blocked" && "text-[var(--risk-critical)] bg-[var(--risk-critical)]/10 ring-1 ring-[var(--risk-critical)]/20",
               onStepClick && s.status !== "upcoming" && "hover:bg-muted/60 cursor-pointer"
             )}
             title={s.desc}
@@ -31,10 +31,10 @@ export function Stepper({ steps, onStepClick }: { steps: StepDef[]; onStepClick?
             <span
               className={cn(
                 "flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-semibold",
-                s.status === "done" && "bg-[var(--risk-safe)] text-white border-[var(--risk-safe)]",
+                s.status === "done" && "bg-[var(--risk-safe)] text-primary-foreground border-[var(--risk-safe)]",
                 s.status === "current" && "bg-primary text-primary-foreground border-primary",
                 s.status === "upcoming" && "bg-card text-muted-foreground border-border",
-                s.status === "blocked" && "bg-[var(--risk-critical)] text-white border-[var(--risk-critical)]"
+                s.status === "blocked" && "bg-[var(--risk-critical)] text-white dark:text-[oklch(0.16_0.005_27)] border-[var(--risk-critical)]"
               )}
             >
               {s.status === "done" ? <Check className="h-3 w-3" /> : i + 1}

@@ -41,8 +41,32 @@ export function sanitizeOutputHtml(content: string): OutputSanitizeResult {
   let linkWarnings = 0;
   out = out.replace(UNSAFE_URL_MD, (full, text, url) => {
     try {
-      const u = new URL(url);
-      if (INTERNAL_HOST_RE.test(u.hostname) || INTERNAL_HOST_RE.test(url)) {
+      const raw = String(url).trim();
+      // Decode redirector wrappers (?url= / ?next= / ?redirect=) before judging.
+      let candidate = raw;
+      try {
+        const parsed = new URL(raw);
+        for (const key of ["url", "next", "redirect", "target", "dest", "destination", "u"]) {
+          const nested = parsed.searchParams.get(key);
+          if (nested && /^https?:\/\//i.test(nested)) {
+            candidate = nested;
+            break;
+          }
+        }
+      } catch {
+        // fall through — handled below
+      }
+      const decoded = (() => {
+        try { return decodeURIComponent(candidate); } catch { return candidate; }
+      })();
+      const hostMatch = decoded.match(/^(?:https?:\/\/)?([^/:?\s#]+)/i);
+      const hostname = hostMatch?.[1]?.toLowerCase().replace(/^\[|\]$/g, "") ?? "";
+      const isInternalHost =
+        INTERNAL_HOST_RE.test(hostname) ||
+        /^0x[0-9a-f]+$/i.test(hostname) || // hex-encoded 127.0.0.1 etc.
+        /^\d+$/.test(hostname.replace(/\./g, "")) && hostname.includes(".") ||
+        hostname.startsWith("::ffff:");
+      if (isInternalHost || INTERNAL_HOST_RE.test(decoded)) {
         linkWarnings++;
         return `[${text}](#internal-url-redacted)`;
       }
@@ -88,9 +112,9 @@ export function sanitizeOutputHtml(content: string): OutputSanitizeResult {
     out = out.replace(commentRe, "");
   }
 
-  // Strip control / zero-width / replacement chars that render as obscure boxes
+  // Strip control / zero-width / bidi / replacement chars (obscure boxes, smuggled directives)
   const beforeCtrl = out.length;
-  out = out.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u200B-\u200D\uFEFF\uFFFD]/g, "");
+  out = out.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u200B-\u200D\uFEFF\uFFFD\u202A-\u202E\u2066-\u2069\u00AD]/g, "");
   if (out.length !== beforeCtrl) {
     removed.push({ type: "control_chars", count: beforeCtrl - out.length });
     warnings.push(`Removed ${beforeCtrl - out.length} control/zero-width character(s) from generated output.`);

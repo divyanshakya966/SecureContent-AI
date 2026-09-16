@@ -2,6 +2,7 @@
 // Every API input is validated before it reaches the engine.
 
 import { z } from "zod";
+import { KNOWN_BUCKET_ENTRIES } from "@/lib/security/policies";
 
 export const DocumentUploadJsonSchema = z.object({
   sampleId: z.string().min(1).max(100).optional(),
@@ -11,17 +12,26 @@ export const DocumentUploadJsonSchema = z.object({
   message: "Provide sampleId or content",
 });
 
-const PolicyNameEnum = z.enum([
-  "PUBLIC_RELEASE",
-  "INTERNAL_SUMMARY",
-  "EXECUTIVE_BRIEF",
-  "HR_SAFE",
-  "SECURITY_INCIDENT",
-]);
+/** Any policy name: built-in profile or user-created UPPER_SNAKE_CASE policy. */
+const PolicyNameSchema = z.string().min(2).max(60).regex(/^[A-Z][A-Z0-9_]+$/, "Policy name must be UPPER_SNAKE_CASE");
+
+/** Bucket entries must be engine-known finding types/categories — typos otherwise silently weaken a policy. */
+const BucketEntrySchema = z.string().min(1).max(60).refine(
+  (v: string) => (KNOWN_BUCKET_ENTRIES as readonly string[]).includes(v),
+  { message: "Unknown policy entry — use a known finding type or category." }
+);
+
+const BucketArraySchema = z.array(BucketEntrySchema).max(100).optional().default([]);
 
 export const SanitizeSchema = z.object({
-  policy: PolicyNameEnum.optional().default("PUBLIC_RELEASE"),
-  profile: PolicyNameEnum.optional(),
+  policy: PolicyNameSchema.optional().default("PUBLIC_RELEASE"),
+  profile: PolicyNameSchema.optional(),
+  findingActions: z.array(z.object({
+    id: z.string().min(5).max(100).optional(),
+    location: z.string().max(60).optional(),
+    type: z.string().max(60).optional(),
+    action: z.enum(["ALLOW", "MASK", "REDACT", "REPLACE", "QUARANTINE"]),
+  })).max(500).optional().default([]),
 });
 
 const OutputTypeEnum = z.enum([
@@ -43,7 +53,7 @@ const OutputTypeEnum = z.enum([
 ]);
 
 export const TransformSchema = z.object({
-  profile: z.enum(["PUBLIC_RELEASE", "INTERNAL_SUMMARY", "EXECUTIVE_BRIEF", "HR_SAFE", "SECURITY_INCIDENT"]).optional().default("PUBLIC_RELEASE"),
+  profile: PolicyNameSchema.optional().default("PUBLIC_RELEASE"),
   outputType: OutputTypeEnum.optional().default("EXECUTIVE_SUMMARY"),
   // Batch support — either single outputType or array
   outputTypes: z.array(OutputTypeEnum).min(1).max(8).optional(),
@@ -57,7 +67,7 @@ export const TransformSchema = z.object({
 });
 
 export const BatchTransformSchema = z.object({
-  profile: z.enum(["PUBLIC_RELEASE", "INTERNAL_SUMMARY", "EXECUTIVE_BRIEF", "HR_SAFE", "SECURITY_INCIDENT"]).optional().default("PUBLIC_RELEASE"),
+  profile: PolicyNameSchema.optional().default("PUBLIC_RELEASE"),
   outputTypes: z.array(OutputTypeEnum).min(1).max(8),
   tone: z.enum(["formal", "professional", "technical", "friendly", "persuasive", "neutral", "concise"]).optional().default("professional"),
   language: z.enum(["en", "es", "fr", "de", "ja", "zh", "hi", "pt"]).optional().default("en"),
@@ -67,7 +77,7 @@ export const BatchTransformSchema = z.object({
 });
 
 export const PolicyCompareSchema = z.object({
-  profiles: z.array(z.enum(["PUBLIC_RELEASE", "INTERNAL_SUMMARY", "EXECUTIVE_BRIEF", "HR_SAFE", "SECURITY_INCIDENT"])).min(1).max(5).optional().default(["PUBLIC_RELEASE", "INTERNAL_SUMMARY", "SECURITY_INCIDENT"]),
+  profiles: z.array(PolicyNameSchema).min(1).max(10).optional().default(["PUBLIC_RELEASE", "INTERNAL_SUMMARY", "SECURITY_INCIDENT"]),
   outputType: OutputTypeEnum.optional().default("EXECUTIVE_SUMMARY"),
 });
 
@@ -80,11 +90,31 @@ export const PolicyCreateSchema = z.object({
   description: z.string().max(500).optional().default(""),
   classification: z.enum(["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED", "UNCLASSIFIED"]).optional().default("INTERNAL"),
   audience: z.enum(["PUBLIC", "INTERNAL", "EXECUTIVE", "HR", "SECURITY", "CUSTOM"]).optional(),
-  allow: z.array(z.string().min(1).max(60)).max(50).optional().default([]),
-  mask: z.array(z.string().min(1).max(60)).max(50).optional().default([]),
-  remove: z.array(z.string().min(1).max(60)).max(50).optional().default([]),
-  block: z.array(z.string().min(1).max(60)).max(50).optional().default([]),
+  allow: BucketArraySchema,
+  mask: BucketArraySchema,
+  remove: BucketArraySchema,
+  block: BucketArraySchema,
   active: z.boolean().optional().default(true),
+});
+
+export const PolicyUpdateSchema = z.object({
+  description: z.string().max(500).optional(),
+  classification: z.enum(["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED", "UNCLASSIFIED"]).optional(),
+  audience: z.enum(["PUBLIC", "INTERNAL", "EXECUTIVE", "HR", "SECURITY", "CUSTOM"]).optional(),
+  allow: z.array(BucketEntrySchema).max(100).optional(),
+  mask: z.array(BucketEntrySchema).max(100).optional(),
+  remove: z.array(BucketEntrySchema).max(100).optional(),
+  block: z.array(BucketEntrySchema).max(100).optional(),
+  active: z.boolean().optional(),
+}).refine((d) => Object.keys(d).length > 0, { message: "Provide at least one field to update." });
+
+export const ScanConfigSchema = z.object({
+  pii: z.boolean().optional().default(true),
+  secrets: z.boolean().optional().default(true),
+  injections: z.boolean().optional().default(true),
+  internalAssets: z.boolean().optional().default(true),
+  unsafeUrls: z.boolean().optional().default(true),
+  minConfidence: z.number().min(0).max(1).optional().default(0),
 });
 
 export const PaginationSchema = z.object({

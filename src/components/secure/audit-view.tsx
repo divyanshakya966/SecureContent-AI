@@ -10,13 +10,17 @@ import { Badge } from "@/components/secure/badges";
 import { formatRelativeTime } from "@/lib/display";
 import { useApp } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { Search, Terminal, Inbox, Clock3 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Search, Terminal, Clock3 } from "lucide-react";
 
 const ACTION_TONE: Record<string, string> = {
   UPLOAD: "bg-muted text-muted-foreground border-border",
   SCAN: "bg-[var(--chart-4)]/10 text-[var(--chart-4)] border-[var(--chart-4)]/30",
   POLICY_APPLY: "bg-[var(--risk-low)]/10 text-[var(--risk-low)] border-[var(--risk-low)]/30",
+  POLICY_CREATE: "bg-[var(--risk-safe)]/10 text-[var(--risk-safe)] border-[var(--risk-safe)]/30",
+  POLICY_UPDATE: "bg-[var(--chart-4)]/10 text-[var(--chart-4)] border-[var(--chart-4)]/30",
+  POLICY_DELETE: "bg-[var(--risk-critical)]/10 text-[var(--risk-critical)] border-[var(--risk-critical)]/30",
+  POLICY_COMPARE: "bg-[var(--risk-low)]/10 text-[var(--risk-low)] border-[var(--risk-low)]/30",
+  INTELLIGENCE_EXTRACT: "bg-[var(--chart-5)]/10 text-[var(--chart-5)] border-[var(--chart-5)]/30",
   SANITIZE: "bg-[var(--risk-low)]/10 text-[var(--risk-low)] border-[var(--risk-low)]/30",
   TRANSFORM: "bg-primary/10 text-primary border-primary/30",
   DLP_BLOCK: "bg-[var(--risk-critical)]/10 text-[var(--risk-critical)] border-[var(--risk-critical)]/30",
@@ -24,7 +28,7 @@ const ACTION_TONE: Record<string, string> = {
 };
 
 export function AuditView() {
-  const { refreshKey, openDocument, setView } = useApp();
+  const { refreshKey, openDocument } = useApp();
   const [audit, setAudit] = useState<AuditLogEntry[] | null>(null);
   const [query, setQuery] = useState("");
 
@@ -52,22 +56,6 @@ export function AuditView() {
 
   return (
     <div className="space-y-3">
-      {isEmpty ? (
-        <Card className="p-8 text-center border-dashed bg-muted/20">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-dashed bg-background">
-            <Inbox className="h-6 w-6 text-muted-foreground" />
-          </div>
-          <div className="mt-3 text-sm font-semibold">No audit events</div>
-          <p className="mx-auto mt-1 max-w-[52ch] text-xs leading-relaxed text-muted-foreground">
-            Ingest a document to collect information. Pipeline activity — scans, sanitization, transformations, and validation decisions — will be recorded here with actor and timestamp after you process a document through the full pipeline.
-          </p>
-          <Button size="sm" className="mt-4" onClick={() => setView("upload")}>
-            Ingest document
-          </Button>
-          <p className="mt-2 text-[11px] text-muted-foreground">No mock history is shown until genuine pipeline activity occurs.</p>
-        </Card>
-      ) : null}
-
       <Card className="overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2.5">
@@ -112,7 +100,7 @@ export function AuditView() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge className={ACTION_TONE[a.action] ?? ACTION_TONE.UPLOAD}>{a.action}</Badge>
                     <span className="font-mono text-[11px] text-muted-foreground">{a.actor}</span>
-                    {a.documentId && <span className="text-[11px] text-primary hidden sm:inline">→ open file</span>}
+                    {a.documentId && <span className="text-[11px] text-primary">→ open file</span>}
                   </div>
                   <p className="mt-1 text-xs text-foreground/80">{a.detail}</p>
                 </div>

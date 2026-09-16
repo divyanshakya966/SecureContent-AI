@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { Moon, Sun, UploadCloud, Search, ChevronRight } from "lucide-react";
+import { Moon, Sun, UploadCloud, ChevronRight } from "lucide-react";
 import { useApp, type ViewKey } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { MobileNav } from "@/components/secure/mobile-nav";
@@ -51,8 +51,17 @@ export function Topbar() {
           <UploadCloud className="h-3.5 w-3.5" />
           New ingest
         </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => setView("upload")}
+          aria-label="New ingest"
+          className="md:hidden h-8 w-8 rounded-md border-border bg-card shadow-sm"
+        >
+          <UploadCloud className="h-4 w-4" />
+        </Button>
 
-        <div className="hidden md:flex items-center gap-1 ml-1 pl-3 border-l border-border">
+        <div className="flex items-center gap-1 ml-1 pl-2 md:pl-3 md:border-l md:border-border">
           <Button
             variant="ghost"
             size="icon"
@@ -63,14 +72,6 @@ export function Topbar() {
             <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
             <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
           </Button>
-        </div>
-
-        <div className="hidden sm:flex items-center gap-2 ml-1">
-          <div className="h-7 w-7 rounded-full bg-muted border flex items-center justify-center text-[10px] font-semibold">OP</div>
-          <div className="hidden xl:block leading-none">
-            <div className="text-xs font-medium leading-none">Operator</div>
-            <div className="text-[11px] text-muted-foreground leading-none">Reviewer</div>
-          </div>
         </div>
       </div>
     </header>

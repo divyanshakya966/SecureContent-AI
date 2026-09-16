@@ -41,7 +41,7 @@ export function Sidebar() {
         </div>
         <div className="leading-none">
           <div className="text-[13px] font-semibold tracking-tight text-sidebar-foreground">SecureContent AI</div>
-          <div className="text-[10px] font-medium tracking-wide text-sidebar-foreground/50">v1.0 · Production</div>
+          <div className="text-[10px] font-medium tracking-wide text-sidebar-foreground/50">v1.0 · Local</div>
         </div>
       </div>
 
@@ -109,7 +109,7 @@ export function Sidebar() {
         </button>
         <div className="rounded-md border border-sidebar-border bg-sidebar-accent/30 px-3 py-2.5">
           <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 motion-safe:animate-pulse" />
             System operational
           </div>
           <div className="mt-1 text-xs font-medium text-sidebar-foreground/75">Scan → Sanitize → Validate</div>

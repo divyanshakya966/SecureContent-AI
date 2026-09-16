@@ -77,7 +77,13 @@ export async function POST(req: NextRequest) {
       const file = form.get("file");
       const title = (form.get("title") as string) || undefined;
       if (file instanceof File) {
-        filename = file.name;
+        // Pre-read guard: File.size is known without loading bytes — reject
+        // oversized uploads before arrayBuffer() can exhaust memory.
+        const preLimit = /^(video\/|audio\/)/.test(file.type || "") || /\.(mp4|mov|webm|avi|mp3|wav|ogg)$/i.test(file.name || "") ? 25 * 1024 * 1024 : 10 * 1024 * 1024;
+        if (file.size > preLimit) {
+          return NextResponse.json({ error: `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is ${preLimit / 1024 / 1024} MB.` }, { status: 400, headers: rateLimitHeaders(rl, 20) });
+        }
+        filename = sanitizeFilename(file.name);
         mimeType = file.type || "application/octet-stream";
         const buf = Buffer.from(await file.arrayBuffer());
         try {
@@ -106,14 +112,21 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ document: serializeDocument(doc) }, { status: 201, headers: rateLimitHeaders(rl, 20) });
       }
       if (title) {
+        // Multipart paste path — validate with the same bounds as the JSON path.
+        if (title.length > 200) {
+          return NextResponse.json({ error: "title: must be 200 characters or fewer." }, { status: 400, headers: rateLimitHeaders(rl, 20) });
+        }
         const rawContent = (form.get("content") as string) || "";
+        if (rawContent.length > 200_000) {
+          return NextResponse.json({ error: "content: must be 200,000 characters or fewer." }, { status: 400, headers: rateLimitHeaders(rl, 20) });
+        }
         const { normalizeIngestedText: normalizeForm } = await import("@/lib/text");
         content = normalizeForm(rawContent);
         if (!content.trim()) {
           return NextResponse.json({ error: "Content is empty after sanitization." }, { status: 400, headers: rateLimitHeaders(rl, 20) });
         }
-        filename = title;
-        const doc = await createDocument({ filename, mimeType, content, sourceKind, title });
+        filename = sanitizeFilename(title);
+        const doc = await createDocument({ filename, mimeType, content, sourceKind, title: filename });
         return NextResponse.json({ document: serializeDocument(doc) }, { status: 201, headers: rateLimitHeaders(rl, 20) });
       }
       return NextResponse.json({ error: "No file or content provided." }, { status: 400, headers: rateLimitHeaders(rl, 20) });
@@ -147,10 +160,10 @@ export async function POST(req: NextRequest) {
       if (!content.trim()) {
         return NextResponse.json({ error: "Content is empty after sanitization — check for binary or unsupported encoding." }, { status: 400, headers: rateLimitHeaders(rl, 20) });
       }
-      filename = p.title || "pasted-document.txt";
+      filename = sanitizeFilename(p.title || "pasted-document.txt");
       mimeType = "text/plain";
       sourceKind = "PASTE";
-      const doc = await createDocument({ filename, mimeType, content, sourceKind, title: p.title || filename });
+      const doc = await createDocument({ filename, mimeType, content, sourceKind, title: filename });
       return NextResponse.json({ document: serializeDocument(doc) }, { status: 201, headers: rateLimitHeaders(rl, 20) });
     }
 
@@ -166,8 +179,13 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function createDocument(opts: {
-  filename: string;
+/** Strip path components, control chars, and brackets from client filenames; cap length. */
+function sanitizeFilename(name: string): string {
+  const base = (name || "upload").split(/[\\/]/).pop() || "upload";
+  return base.replace(/[\x00-\x1F\x7F\[\]\n\r]/g, "").trim().slice(0, 120) || "upload";
+}
+
+async function createDocument(opts: {  filename: string;
   mimeType: string;
   content: string;
   sourceKind: "UPLOAD" | "PASTE" | "SAMPLE";

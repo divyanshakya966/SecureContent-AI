@@ -10,13 +10,13 @@ import type { IntelligenceReport, DocumentRecord } from "@/types";
 import { useApp } from "@/lib/store";
 
 const TACTIC_COLOR: Record<string, string> = {
-  "Initial Access": "bg-red-500/10 text-red-600 border-red-500/30",
-  "Credential Access": "bg-orange-500/10 text-orange-600 border-orange-500/30",
-  "Privilege Escalation": "bg-amber-500/10 text-amber-600 border-amber-500/30",
-  "Defense Evasion": "bg-violet-500/10 text-violet-600 border-violet-500/30",
-  "Discovery": "bg-blue-500/10 text-blue-600 border-blue-500/30",
-  "Lateral Movement": "bg-cyan-500/10 text-cyan-600 border-cyan-500/30",
-  "Exfiltration": "bg-rose-500/10 text-rose-600 border-rose-500/30",
+  "Initial Access": "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30",
+  "Credential Access": "bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/30",
+  "Privilege Escalation": "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30",
+  "Defense Evasion": "bg-violet-500/10 text-violet-700 dark:text-violet-400 border-violet-500/30",
+  "Discovery": "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30",
+  "Lateral Movement": "bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-500/30",
+  "Exfiltration": "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/30",
 };
 
 function EmptyIntelligence({ onIngest }: { onIngest: () => void }) {
@@ -158,22 +158,22 @@ export function IntelligenceView() {
         <div className="grid gap-3 md:grid-cols-4">
           <Card className="p-4">
             <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground"><Users className="h-3.5 w-3.5" /> Entities</div>
-            <div className="mt-1 text-2xl font-bold">{allEntities.length}</div>
+            <div className="mt-1 text-2xl font-mono font-semibold tabular-nums">{allEntities.length}</div>
             <div className="text-[11px] text-muted-foreground">persons, orgs, emails, phones, IPs, dates</div>
           </Card>
           <Card className="p-4">
             <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground"><Globe className="h-3.5 w-3.5" /> IOCs</div>
-            <div className="mt-1 text-2xl font-bold">{allIOCs.length}</div>
+            <div className="mt-1 text-2xl font-mono font-semibold tabular-nums">{allIOCs.length}</div>
             <div className="text-[11px] text-muted-foreground">IPs, domains, URLs, hashes, CVEs</div>
           </Card>
           <Card className="p-4">
             <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground"><Crosshair className="h-3.5 w-3.5" /> TTPs</div>
-            <div className="mt-1 text-2xl font-bold">{allTTPs.length}</div>
+            <div className="mt-1 text-2xl font-mono font-semibold tabular-nums">{allTTPs.length}</div>
             <div className="text-[11px] text-muted-foreground">MITRE ATT&CK techniques</div>
           </Card>
           <Card className="p-4">
             <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground"><AlertTriangle className="h-3.5 w-3.5" /> Risks</div>
-            <div className="mt-1 text-2xl font-bold">{Object.values(reports).reduce((a, r) => a + r.risks.length, 0)}</div>
+            <div className="mt-1 text-2xl font-mono font-semibold tabular-nums">{Object.values(reports).reduce((a, r) => a + r.risks.length, 0)}</div>
             <div className="text-[11px] text-muted-foreground">synthesized from findings + IOCs/TTPs</div>
           </Card>
         </div>
@@ -186,7 +186,7 @@ export function IntelligenceView() {
           <div className="flex flex-wrap gap-2">
             {Object.entries(tacticCounts).map(([tactic, count]) => (
               <span key={tactic} className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium ${TACTIC_COLOR[tactic] ?? "bg-muted text-muted-foreground border-border"}`}>
-                {tactic} <span className="rounded bg-black/10 px-1 text-[10px]">{count}</span>
+                {tactic} <span className="rounded bg-foreground/10 px-1 text-[10px]">{count}</span>
               </span>
             ))}
           </div>
@@ -203,7 +203,7 @@ export function IntelligenceView() {
 
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
         {/* Doc selector */}
-        <Card className="p-3 h-fit">
+        <Card className="p-3 h-fit max-h-[60vh] overflow-auto scroll-thin lg:sticky lg:top-16">
           <div className="text-xs font-semibold mb-2 flex items-center gap-2"><FileSearch className="h-3.5 w-3.5" /> Documents</div>
           <div className="space-y-1.5">
             {docs.map((d) => {
@@ -249,7 +249,7 @@ export function IntelligenceView() {
                   {active.entities.length ? (
                     active.entities.slice(0, 12).map((e, i) => (
                       <div key={i} className="flex items-center justify-between rounded border bg-muted/30 px-2 py-1.5">
-                        <span className="text-xs font-mono truncate">{e.value}</span>
+                        <span className="text-xs font-mono truncate" title={e.value}>{e.value}</span>
                         <span className="ml-2 shrink-0 rounded border bg-card px-1.5 py-0.5 text-[10px]">{e.type}</span>
                       </div>
                     ))
@@ -265,8 +265,8 @@ export function IntelligenceView() {
                   {active.iocs.length ? (
                     active.iocs.slice(0, 12).map((i, idx) => (
                       <div key={idx} className="flex items-center justify-between rounded border bg-muted/30 px-2 py-1.5">
-                        <span className="text-xs font-mono truncate">{i.value}</span>
-                        <span className={`ml-2 shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${i.severity === "CRITICAL" ? "bg-red-500/10 text-red-600 border-red-500/30" : i.severity === "HIGH" ? "bg-orange-500/10 text-orange-600 border-orange-500/30" : "bg-muted text-muted-foreground"}`}>{i.type}</span>
+                        <span className="text-xs font-mono truncate" title={i.value}>{i.value}</span>
+                        <span className={`ml-2 shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${i.severity === "CRITICAL" ? "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30" : i.severity === "HIGH" ? "bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/30" : "bg-muted text-muted-foreground"}`}>{i.type}</span>
                       </div>
                     ))
                   ) : (
@@ -329,7 +329,7 @@ export function IntelligenceView() {
                     active.keyFindings.map((kf, i) => (
                       <div key={i} className="rounded border bg-card p-2.5">
                         <div className="text-xs leading-relaxed">{kf.finding}</div>
-                        <div className="mt-1 font-mono text-[11px] text-muted-foreground">{kf.evidence} · <span className={kf.grounded ? "text-emerald-600" : "text-amber-600"}>{kf.grounded ? "grounded" : "ungrounded"}</span></div>
+                        <div className="mt-1 font-mono text-[11px] text-muted-foreground">{kf.evidence} · <span className={kf.grounded ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}>{kf.grounded ? "grounded" : "ungrounded"}</span></div>
                       </div>
                     ))
                   ) : (

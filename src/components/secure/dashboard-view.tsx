@@ -55,9 +55,9 @@ function StatCard({ icon: Icon, label, value, hint, tone = "default", empty }: S
             empty
               ? "bg-muted/60 text-muted-foreground border-border"
               : tone === "danger"
-              ? "bg-[var(--risk-critical)]/8 text-[var(--risk-critical)] border-[var(--risk-critical)]/15"
+              ? "bg-[var(--risk-critical)]/12 text-[var(--risk-critical)] border-[var(--risk-critical)]/15"
               : tone === "success"
-              ? "bg-[var(--risk-safe)]/8 text-[var(--risk-safe)] border-[var(--risk-safe)]/15"
+              ? "bg-[var(--risk-safe)]/12 text-[var(--risk-safe)] border-[var(--risk-safe)]/15"
               : "bg-muted text-muted-foreground border-border"
           )}
         >
@@ -262,17 +262,17 @@ export function DashboardView() {
               />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats.riskTrend} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} barGap={4} barCategoryGap="18%">
+                <BarChart data={stats.riskTrend} margin={{ top: 8, right: 12, left: 0, bottom: 0 }} barGap={4} barCategoryGap="18%">
                   <XAxis dataKey="label" tick={{ fontSize: 10, fontFamily: "var(--font-mono)", fill: "var(--muted-foreground)" }} interval={0} axisLine={false} tickLine={false} />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} width={28} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} width={36} tickMargin={6} tickCount={6} />
                   <Tooltip
                     contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12, boxShadow: "0 4px 12px oklch(0 0 0 / 0.08)" }}
                     cursor={{ fill: "var(--muted)", opacity: 0.12 }}
-                    formatter={(value: any, name: any) => [value, name === "before" ? "Before" : "After"]}
+                    formatter={(value: any, name: any) => [value, String(name).toLowerCase() === "before" ? "Before" : "After"]}
                     labelFormatter={(_label, payload) => (payload?.[0]?.payload as any)?.title ?? _label}
                   />
-                  <Bar dataKey="before" name="Before" radius={[4, 4, 0, 0]} fill="var(--risk-critical)" fillOpacity={0.9} />
-                  <Bar dataKey="after" name="After" radius={[4, 4, 0, 0]} fill="var(--risk-safe)" fillOpacity={0.95} />
+                  <Bar dataKey="before" name="Before" radius={[4, 4, 0, 0]} fill="var(--risk-critical)" fillOpacity={0.9} minPointSize={3} />
+                  <Bar dataKey="after" name="After" radius={[4, 4, 0, 0]} fill="var(--risk-safe)" fillOpacity={0.95} minPointSize={3} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -335,7 +335,7 @@ export function DashboardView() {
                         <span className="text-muted-foreground/40">·</span>
                         <span className="text-muted-foreground text-xs">{a.actor}</span>
                       </div>
-                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground line-clamp-2">{a.detail}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground line-clamp-2" title={a.detail}>{a.detail}</p>
                     </div>
                     <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">{formatRelativeTime(a.timestamp)}</span>
                   </li>

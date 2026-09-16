@@ -15,7 +15,7 @@ describe("Document parsers", () => {
   it("handles image placeholder", async () => {
     const buf = Buffer.from([0x89, 0x50, 0x4e, 0x47]); // PNG magic
     const p = await parseDocument({ filename: "scan.png", mimeType: "image/png", buffer: buf });
-    expect(p.text).toMatch(/Image content placeholder/i);
+    expect(p.text).toMatch(/\[Image:/i);
     expect(p.warnings.length).toBeGreaterThan(0);
   });
   it("DOCX parsing tolerates truncated input (warns but does not throw)", async () => {

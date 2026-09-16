@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { scanContent, computeRisk } from "@/lib/security";
+import type { ScanConfig } from "@/types";
 import { serializeDocument, logAudit } from "@/lib/api/helpers";
 import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
-import { DocumentIdSchema, parseOr400 } from "@/lib/validation/schemas";
+import { DocumentIdSchema, ScanConfigSchema, parseOr400 } from "@/lib/validation/schemas";
 import { buildIntelligenceReport } from "@/lib/intelligence/extractor";
 
 export const runtime = "nodejs";
@@ -23,8 +24,39 @@ export async function POST(
   const doc = await db.document.findUnique({ where: { id } });
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404, headers: rateLimitHeaders(rl, 15) });
 
-  const rawFindings = scanContent(doc.rawContent);
+  // Optional scan configuration (detector families + confidence floor).
+  // When omitted, the document's stored config is reused (default: everything on).
+  const body: unknown = await req.json().catch(() => ({}));
+  const rawConfig = (body as { config?: unknown }).config;
+  let scanConfig: ScanConfig;
+  if (rawConfig === undefined) {
+    try {
+      scanConfig = ((JSON.parse(doc.metadata ?? "{}") as { scanConfig?: ScanConfig }).scanConfig ?? {
+        pii: true, secrets: true, injections: true, internalAssets: true, unsafeUrls: true, minConfidence: 0,
+      });
+    } catch {
+      scanConfig = { pii: true, secrets: true, injections: true, internalAssets: true, unsafeUrls: true, minConfidence: 0 };
+    }
+  } else {
+    const cfgParsed = parseOr400(ScanConfigSchema, rawConfig);
+    if (!cfgParsed.ok) return NextResponse.json({ error: cfgParsed.error }, { status: 400, headers: rateLimitHeaders(rl, 15) });
+    scanConfig = cfgParsed.data as ScanConfig;
+  }
+
+  const rawFindings = scanContent(doc.rawContent, scanConfig);
   const risk = computeRisk(rawFindings);
+
+  // Re-scan invalidates any prior working copy — clear the policy marker too.
+  let scanMeta: Record<string, unknown> = {};
+  try {
+    scanMeta = JSON.parse(doc.metadata ?? "{}");
+  } catch {
+    scanMeta = {};
+  }
+  delete scanMeta.sanitizedPolicy;
+  delete scanMeta.sanitizedAt;
+  scanMeta.scanConfig = scanConfig;
+  const scanMetadata = JSON.stringify(scanMeta);
 
   // Atomic replacement of INPUT findings
   await db.$transaction(async (tx) => {
@@ -56,6 +88,7 @@ export async function POST(
         // Reset sanitized state so caller must re-sanitize
         sanitizedContent: null,
         riskAfter: 0,
+        metadata: scanMetadata,
       },
     });
   });
@@ -102,7 +135,7 @@ export async function POST(
     documentId: id,
     actor: "policy_engine",
     action: "SCAN",
-    detail: `Re-scanned "${doc.title}". Risk ${risk.total}/100, ${rawFindings.length} findings, classification ${risk.classification}.`,
+    detail: `Re-scanned "${doc.title}". Risk ${risk.total}/100, ${rawFindings.length} findings, classification ${risk.classification}. Config: pii=${scanConfig.pii}, secrets=${scanConfig.secrets}, injections=${scanConfig.injections}, internal=${scanConfig.internalAssets}, urls=${scanConfig.unsafeUrls}, minConf=${scanConfig.minConfidence ?? 0}.`,
   });
 
   const fresh = await db.document.findUnique({

@@ -41,7 +41,11 @@ describe("Policy-Aware Transformation", () => {
     const pub = sanitizeContent(raw, findings, policy("PUBLIC_RELEASE"));
     const sec = sanitizeContent(raw, findings, policy("SECURITY_INCIDENT"));
 
-    expect(pub.sanitizedContent).toContain("ra***@example.org");
+    // Email is masked (local part + domain both partially hidden) — raw must not survive.
+    expect(pub.sanitizedContent).not.toContain("rahul.sharma@example.org");
+    expect(pub.sanitizedContent).toMatch(/\*\*\*@/);
+    // Phone is masked to last-2 digits only.
+    expect(pub.sanitizedContent).not.toContain("98765-43210");
     // Both should mask IP to [INTERNAL_HOST] via REPLACE
     expect(pub.sanitizedContent).not.toContain("10.11.4.5");
     expect(sec.sanitizedContent).not.toContain("10.11.4.5");

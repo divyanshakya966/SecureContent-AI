@@ -18,7 +18,16 @@ export type FindingType =
   | "AADHAAR"
   | "PAN"
   | "CREDIT_CARD"
+  | "SSN"
+  | "PASSPORT"
+  | "DRIVERS_LICENSE"
+  | "POSTAL_CODE"
+  | "BANK_ACCOUNT"
+  | "IBAN"
+  | "IFSC"
+  | "UPI"
   | "IP_ADDRESS"
+  | "IPV6_ADDRESS"
   | "PERSON_NAME"
   | "DATE_OF_BIRTH"
   | "ADDRESS"
@@ -28,11 +37,13 @@ export type FindingType =
   | "PRIVATE_KEY"
   | "DB_CONN_STRING"
   | "CLOUD_CRED"
+  | "AUTH_TOKEN"
   | "PASSWORD"
   | "INJECTION_PHRASE"
   | "ROLE_MANIPULATION"
   | "HIDDEN_INSTRUCTION"
   | "TOOL_INVOCATION"
+  | "UNSAFE_URL"
   | "INTERNAL_URL"
   | "INTERNAL_PROJECT";
 
@@ -239,6 +250,36 @@ export interface PolicyRule {
   createdAt: string;
   updatedAt: string;
 }
+
+/** Per-finding action chosen by a reviewer after scanning (overrides policy buckets). */
+export interface FindingActionOverride {
+  /** Finding record id (preferred) */
+  id?: string;
+  /** Fallback locator when id is unavailable: "char_offset:<start>-<end>" + type */
+  location?: string;
+  type?: FindingType;
+  action: SanitizeAction;
+}
+
+/** Which detector families run during a scan. Output DLP always runs the full set. */
+export interface ScanConfig {
+  pii: boolean;
+  secrets: boolean;
+  injections: boolean;
+  internalAssets: boolean;
+  unsafeUrls: boolean;
+  /** Drop findings below this confidence (0..1). Default 0. */
+  minConfidence?: number;
+}
+
+export const DEFAULT_SCAN_CONFIG: ScanConfig = {
+  pii: true,
+  secrets: true,
+  injections: true,
+  internalAssets: true,
+  unsafeUrls: true,
+  minConfidence: 0,
+};
 
 // ---------------------------------------------------------------------------
 // Policy-Aware Transformation (signature innovation #1)

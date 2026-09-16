@@ -31,7 +31,7 @@ export function ArchitectureView() {
       <Card className="p-5">
         <div className="flex items-center gap-2"><Network className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Pipeline</h3></div>
         <p className="mt-1 text-xs text-muted-foreground">Security controls across the transformation flow.</p>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 overflow-visible">
           {PIPELINE.map((s, i) => {
             const Icon = s.icon;
             return (
@@ -44,7 +44,7 @@ export function ArchitectureView() {
                   <div className="mt-2 text-xs font-semibold">{s.label}</div>
                   <p className="mt-1 text-[11px] text-muted-foreground">{s.desc}</p>
                 </div>
-                {i < PIPELINE.length - 1 && <ArrowRight className="absolute -right-2.5 top-1/2 hidden h-4 w-4 -translate-y-1/2 text-muted-foreground/40 xl:block" />}
+                {i < PIPELINE.length - 1 && <ArrowRight className="absolute -right-2 top-1/2 hidden h-4 w-4 -translate-y-1/2 text-muted-foreground/40 xl:block" aria-hidden />}
               </div>
             );
           })}

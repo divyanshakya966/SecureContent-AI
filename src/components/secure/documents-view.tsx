@@ -128,7 +128,7 @@ export function DocumentsView() {
           )}
         </div>
       ) : (
-        <div className="overflow-auto scroll-thin">
+        <div className="overflow-auto scroll-thin max-h-[70vh]">
           <Table>
             <TableHeader className="sticky top-0 bg-muted/40 backdrop-blur-md z-10 border-b">
               <TableRow className="hover:bg-transparent border-border">
@@ -161,7 +161,7 @@ export function DocumentsView() {
                   <TableCell className="py-3">
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground/60 hover:text-destructive opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()} aria-label={`Delete ${d.title}`}><Trash2 className="h-3.5 w-3.5" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground/60 hover:text-destructive opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()} aria-label={`Delete ${d.title}`}><Trash2 className="h-3.5 w-3.5" /></Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent onClick={(e) => e.stopPropagation()}>
                         <AlertDialogHeader><AlertDialogTitle>Delete document?</AlertDialogTitle><AlertDialogDescription>Remove “{d.title}” and associated findings. This cannot be undone.</AlertDialogDescription></AlertDialogHeader>
@@ -175,7 +175,7 @@ export function DocumentsView() {
           </Table>
           <div className="flex items-center justify-between border-t border-border bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground">
             <span>{filtered.length} documents · {docs.filter(d=>d.status==="TRANSFORMED").length} transformed</span>
-            <span className="hidden sm:inline">Shift+click row to open in new context · ⌘K to jump</span>
+            <span className="hidden sm:inline">Click a row to inspect · ⌘K to jump</span>
           </div>
         </div>
       )}

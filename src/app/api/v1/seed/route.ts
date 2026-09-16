@@ -132,6 +132,15 @@ export async function POST(req: NextRequest) {
         sanitizedContent: sanitized.sanitizedContent,
         status: sanitized.blocked ? "BLOCKED" : "SANITIZED",
         riskAfter: sanitized.blocked ? risk.total : residualRisk.total,
+        metadata: JSON.stringify({
+          charCount: sample.content.length,
+          wordCount: sample.content.trim().split(/\s+/).length,
+          pages: 1,
+          sections: sample.content.split(/\n\s*\n/).length,
+          sourceFormat: "text/plain",
+          sanitizedPolicy: policy.name,
+          sanitizedAt: new Date().toISOString(),
+        }),
       },
     });
 
@@ -170,7 +179,7 @@ export async function POST(req: NextRequest) {
           model: tx.model,
           outputContent: finalContent,
           grounding: tx.citations.some((c) => !c.grounded) ? "FAIL" : "PASS",
-          policyStatus: "PASS",
+          policyStatus: !dlp.passed || tx.citations.some((c) => !c.grounded) ? "FAIL" : "PASS",
           outputDlp: dlp.passed ? "PASS" : "FAIL",
           riskDelta: risk.total - outputRisk.total,
           leakageCount: dlp.leakageFindings.length,

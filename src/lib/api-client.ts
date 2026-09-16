@@ -13,6 +13,8 @@ import type {
   OutputType,
   IntelligenceReport,
   PolicyCompareResult,
+  FindingActionOverride,
+  ScanConfig,
   GenerationTone,
   GenerationLanguage,
   DetailLevel,
@@ -52,6 +54,15 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}
   try {
     const res = await fetch(input, { ...init, signal: controller.signal });
     return res;
+  } catch (e: any) {
+    // fetch throws DOMException AbortError on timeout — surface a clear message
+    // so the UI can distinguish "client gave up" from "server failed".
+    if (e?.name === "AbortError" || controller.signal.aborted) {
+      throw new Error(
+        `Request timed out after ${Math.round(timeoutMs / 1000)}s — the server may still be processing. Reload to check.`
+      );
+    }
+    throw e;
   } finally {
     clearTimeout(t);
   }
@@ -98,16 +109,20 @@ export const api = {
     await json<{ ok: boolean }>(r);
   },
 
-  async scanDocument(id: string): Promise<DocumentRecord> {
-    const r = await fetchWithTimeout(`/api/v1/documents/${id}/scan`, { method: "POST" });
+  async scanDocument(id: string, config?: ScanConfig): Promise<DocumentRecord> {
+    const r = await fetchWithTimeout(`/api/v1/documents/${id}/scan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config ? { config } : {}),
+    });
     return (await json<{ document: DocumentRecord }>(r)).document;
   },
 
-  async sanitizeDocument(id: string, policy: string) {
+  async sanitizeDocument(id: string, policy: string, findingActions?: FindingActionOverride[]) {
     const r = await fetchWithTimeout(`/api/v1/documents/${id}/sanitize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ policy }),
+      body: JSON.stringify(findingActions?.length ? { policy, findingActions } : { policy }),
     });
     return json<{ document: DocumentRecord; actions: unknown[]; blocked: boolean; residualRisk: number }>(r);
   },
@@ -118,11 +133,13 @@ export const api = {
     outputType: OutputType,
     params?: Omit<TransformParams, "profile" | "outputType">
   ) {
+    // LLM chain (Gemini → Groq) routinely takes 14–25s; the old 15s default
+    // aborted just as the server succeeded (POST 200 in 15.0s) → false "failed" popup.
     const r = await fetchWithTimeout(`/api/v1/documents/${id}/transform`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profile, outputType, ...params }),
-    });
+    }, 90_000);
     return json<{ document: DocumentRecord; transformation: TransformationRecord; transformations?: TransformationRecord[]; dlpReasons: string[]; batchId?: string | null }>(r);
   },
 
@@ -134,7 +151,7 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
-    }, 30_000);
+    }, 120_000);
     return json<{ document: DocumentRecord; transformations: TransformationRecord[]; dlpReasons: string[]; batchId: string }>(r);
   },
 
@@ -147,7 +164,7 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
-    }, 40_000);
+    }, 120_000);
     return json<{ document: DocumentRecord; transformations: TransformationRecord[]; batchId: string; dlpReasons: string[] }>(r);
   },
 
@@ -176,6 +193,29 @@ export const api = {
     return (await json<{ policies: PolicyRule[] }>(r)).policies;
   },
 
+  async createPolicy(input: { name: string; description?: string; classification?: string; audience?: string; allow?: string[]; mask?: string[]; remove?: string[]; block?: string[]; active?: boolean }): Promise<PolicyRule> {
+    const r = await fetchWithTimeout("/api/v1/policies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    return (await json<{ policy: PolicyRule }>(r)).policy;
+  },
+
+  async updatePolicy(name: string, input: { description?: string; classification?: string; audience?: string; allow?: string[]; mask?: string[]; remove?: string[]; block?: string[]; active?: boolean }): Promise<PolicyRule> {
+    const r = await fetchWithTimeout(`/api/v1/policies/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    return (await json<{ policy: PolicyRule }>(r)).policy;
+  },
+
+  async deletePolicy(name: string): Promise<void> {
+    const r = await fetchWithTimeout(`/api/v1/policies/${encodeURIComponent(name)}`, { method: "DELETE" });
+    await json<{ ok: boolean }>(r);
+  },
+
   async getSamples(): Promise<SampleDocument[]> {
     const r = await fetchWithTimeout("/api/v1/samples", { cache: "no-store" });
     return (await json<{ samples: SampleDocument[] }>(r)).samples;
@@ -191,7 +231,7 @@ export const api = {
     return (await json<{ intelligence: IntelligenceReport }>(r)).intelligence;
   },
 
-  async policyCompare(id: string, profiles: TransformationProfile[], outputType: OutputType = "EXECUTIVE_SUMMARY"): Promise<PolicyCompareResult> {
+  async policyCompare(id: string, profiles: string[], outputType: OutputType = "EXECUTIVE_SUMMARY"): Promise<PolicyCompareResult> {
     const r = await fetchWithTimeout(`/api/v1/documents/${id}/policy-compare`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

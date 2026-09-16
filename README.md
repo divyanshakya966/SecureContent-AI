@@ -18,13 +18,13 @@ Ingest → Scan → Classify → Sanitize → Transform (configurable) → Valid
 
 **Source content** is submitted via the dashboard as high-quality English text, documents, articles, reports, prompts, images, videos or contextual information. The operator selects **one or more desired output types** and tunes **generation parameters**; the platform analyses input, understands context & intent, and generates the requested artefact(s).
 
-- **Source types:** PDF, DOCX, PPTX, TXT, MD, CSV, JSON, HTML, images (PNG/JPG/WebP/SVG via OCR placeholder or Docling), video/audio (MP4/MOV/WebM/MP3/WAV via transcript placeholder), plus direct paste of prompts & contextual info. Image/video OCR & transcription are enabled via the optional Docling/Python worker or by pasting the transcript.
+- **Source types:** PDF, DOCX, PPTX, TXT, MD, CSV, JSON, HTML, images (PNG/JPG/WebP/SVG/TIFF via local `tesseract.js`+`sharp` OCR or Docling), video/audio (MP4/MOV/WebM/MP3/WAV via transcript placeholder), plus direct paste of prompts & contextual info. Image/video OCR & transcription are enabled locally (no worker needed) and via the optional Docling/Python worker or by pasting the transcript.
 - **15 output formats:** Executive Summary, FAQ, Technical Report, Slide Outline, Email Draft, Press Release, Social Post (3 variants), Newsletter, Policy Brief, Training Guide, Incident Summary, Research Digest, Announcement, Blog Post, Meeting Minutes — single or batch (up to 8) per request.
 - **Configurable generation parameters:** Target audience (5 policy profiles), tone (formal/professional/technical/friendly/persuasive/neutral/concise), language (en/es/fr/de/ja/zh/hi/pt), level of detail (brief/standard/detailed/comprehensive), communication objective (inform/summarize/persuade/educate/announce/report/analyze/comply), and content style (narrative/bullet/structured/conversational/formal/executive/creative).
 
 ## Features
 
-- **Ingestion** — PDF, DOCX, PPTX, TXT, MD, CSV, JSON, HTML, images & video/audio with isolated parsers; Docling worker for OCR & scanned PDFs
+- **Ingestion** — PDF, DOCX, PPTX (local `jszip`), TXT, MD, CSV, JSON, HTML, images & video/audio with isolated parsers + quality gate (`scoreTextQuality`); Images OCR locally via `tesseract.js`+`sharp`; Docling worker for enhanced OCR & scanned PDFs
 - **Detection** — PII, secrets, prompt injection, internal assets, unsafe URLs (heuristic + entropy)
 - **Risk scoring** — Weighted, transparent breakdown with classification (PUBLIC → RESTRICTED)
 - **Policy engine** — 5 audience profiles (Public, Internal, Executive, HR, Security) with allow / mask / remove / block
@@ -58,10 +58,16 @@ bunx prisma db push --accept-data-loss
 DATABASE_URL="file:./prisma/dev.db"   # local SQLite; for Postgres use postgresql://...
 GEMINI_API_KEY=""                      # https://aistudio.google.com/apikey
 GROQ_API_KEY=""                        # https://console.groq.com/keys (fallback)
-GEMINI_MODEL="gemini-1.5-flash"
+GEMINI_MODEL="gemini-3.6-flash"
 GROQ_MODEL="openai/gpt-oss-120b"
-# optional OCR
+# optional rollback chains (comma-separated, tried in order)
+# Sep-2026: 2.5-* is 404 for new users — use 3.6-flash / 3.5-flash-lite / 3.1-pro-preview
+# GEMINI_FALLBACK_MODELS="gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-pro-preview"
+# GROQ_FALLBACK_MODELS="openai/gpt-oss-120b,openai/gpt-oss-20b,llama-3.3-70b-versatile,llama-3.1-8b-instant,qwen/qwen3-32b"
+# MAX_TRANSFORM_CHARS="90000"  # truncate before LLM to avoid context_length_exceeded
+# optional OCR (Docling worker is preferred; local tesseract is opt-in)
 # DOCLING_WORKER_URL="http://localhost:8001/parse"
+# ENABLE_LOCAL_OCR="false"  # set "true" to enable local tesseract.js (slow, for demo only)
 ```
 
 > Keys are server-only (`src/lib/ai/transform.ts` runtime guard). Without keys the app uses a deterministic offline mock that still exercises DLP/grounding.
@@ -140,7 +146,7 @@ bun run build
 NODE_ENV=production DATABASE_URL="file:./prisma/dev.db" node .next/standalone/server.js
 ```
 
-**Troubleshooting ingest obscure characters:** fixed in `src/lib/parsers.ts` + `src/lib/text.ts` — binary PPTX/PDF fallback no longer decodes as UTF-8, all parser outputs are NFC-normalized and stripped of control/zero-width/� chars, plus `sanitizeForDisplay` on every `<pre>`/table cell with `[overflow-wrap:anywhere]`. If a file still shows empty, the UI now surfaces `No extractable text — enable Docling` instead of boxes.
+**Ingest quality (no obscure output):** fixed in `src/lib/parsers.ts` + `src/lib/text.ts` + `src/lib/ocr.ts` + `mini-services/docling-worker/app.py` — every extraction is scored (`printableRatio`, `spaceRatio`, `garbledRatio`, `dictionaryRatio`). Garbage (hex, CID, `PJYI~`, `�` boxes) is discarded and never stored. PDF uses `pdf-parse`+quality gate; scanned PDFs auto-try Docling `pymupdf+pytesseract`/`pdfminer`; PPTX extracted locally via `jszip` (`<a:t>` nodes) + `python-pptx`; Images OCR locally via `tesseract.js`+`sharp` (grayscale/normalize/upscale) or Docling `Pillow+pytesseract`; SVG extracts `<text>` nodes. All outputs NFC-normalized, control/zero-width stripped, `[overflow-wrap:anywhere]` safe. If truly no text, UI shows clean metadata placeholder (`[Image: file — PNG 800x600]` or `No extractable text — enable OCR`) instead of obscure characters.
 
 **Verify cloud:** `curl http://<host>/api/v1/stats` should return `stats.totalDocuments`.
 
@@ -155,11 +161,14 @@ DATABASE_URL="file:./dev.db"
 # LLM — server-side only (never expose to client or commit)
 GEMINI_API_KEY=""              # primary — Google AI Studio: https://aistudio.google.com/apikey
 GROQ_API_KEY=""                # fallback — Groq console: https://console.groq.com/keys (model: openai/gpt-oss-120b)
-GEMINI_MODEL="gemini-1.5-flash"
+GEMINI_MODEL="gemini-3.6-flash"
 GROQ_MODEL="openai/gpt-oss-120b"
+# GEMINI_FALLBACK_MODELS="gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-pro-preview"  # rollback chain (2.5-* is 404 for new users)
+# GROQ_FALLBACK_MODELS="openai/gpt-oss-120b,openai/gpt-oss-20b,llama-3.3-70b-versatile,llama-3.1-8b-instant"
 
 # Optional
 DOCLING_WORKER_URL=""          # optional: http://localhost:8001/parse
+# ENABLE_LOCAL_OCR="false"     # set "true" to enable local tesseract.js for images (disabled by default for speed; prefer Docling worker)
 ```
 
 > **Security:** `GEMINI_API_KEY` / `GROQ_API_KEY` are read **only** on the server
@@ -169,14 +178,14 @@ DOCLING_WORKER_URL=""          # optional: http://localhost:8001/parse
 > If no keys are set, transforms fall back to a deterministic offline mock (still
 > exercises Output DLP + grounding).
 
-| Source | How it is handled |
+| Source | How it is handled (never obscure) |
 |---|---|
-| **Text** (articles, reports, prompts, contextual info) — TXT/MD/CSV/JSON/HTML | Direct UTF-8, NFC-normalized, control/zero-width stripped |
-| **Documents** — PDF | `pdf-parse`; Docling → PyMuPDF → pdfminer for scanned/complex |
-| **Documents** — DOCX | `mammoth`; Docling for complex |
-| **Slides** — PPTX | Placeholder locally; Docling worker for full extraction |
-| **Images** — PNG/JPG/WebP/SVG/TIFF | Placeholder locally (OCR via Docling/Tesseract); or paste description as contextual info |
-| **Video/Audio** — MP4/MOV/WebM/MP3/WAV | Transcript placeholder locally; paste transcript or run Whisper worker; then transform transcript |
+| **Text** (articles, reports, prompts, contextual info) — TXT/MD/CSV/JSON/HTML | Direct UTF-8, NFC-normalized, control/zero-width stripped + `scoreTextQuality` garbage filter |
+| **Documents** — PDF | `pdf-parse` + quality gate → Docling `pymupdf` → `pymupdf+OCR` (150dpi) → `pdfminer` for scanned/complex |
+| **Documents** — DOCX | `mammoth` + quality gate; Docling `python-docx` for complex |
+| **Slides** — PPTX | Local `jszip` extracts `<a:t>` from `ppt/slides/slide*.xml`; Docling `python-pptx` fallback |
+| **Images** — PNG/JPG/WebP/SVG/TIFF/BMP | Local `tesseract.js`+`sharp` (grayscale/normalize/upscale) or Docling `Pillow+pytesseract`; SVG extracts `<text>`/`<tspan>`; metadata placeholder if no text |
+| **Video/Audio** — MP4/MOV/WebM/MP3/WAV | Metadata placeholder; paste transcript or run Whisper worker; then transform transcript |
 
 Generation is **always** `sanitized working copy → LLM inside `<UNTRUSTED_DOCUMENT>` envelope → output sanitizer → DLP rescan → grounding`.
 
