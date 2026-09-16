@@ -20,15 +20,16 @@ Ingest → Scan → Classify → Sanitize → Transform (configurable) → Valid
 
 - **Source types:** PDF, DOCX, PPTX, TXT, MD, CSV, JSON, HTML, images (PNG/JPG/WebP/SVG/TIFF via local `tesseract.js`+`sharp` OCR or Docling), video/audio (MP4/MOV/WebM/MP3/WAV via transcript placeholder), plus direct paste of prompts & contextual info. Image/video OCR & transcription are enabled locally (no worker needed) and via the optional Docling/Python worker or by pasting the transcript.
 - **15 output formats:** Executive Summary, FAQ, Technical Report, Slide Outline, Email Draft, Press Release, Social Post (3 variants), Newsletter, Policy Brief, Training Guide, Incident Summary, Research Digest, Announcement, Blog Post, Meeting Minutes — single or batch (up to 8) per request.
-- **Configurable generation parameters:** Target audience (5 policy profiles), tone (formal/professional/technical/friendly/persuasive/neutral/concise), language (en/es/fr/de/ja/zh/hi/pt), level of detail (brief/standard/detailed/comprehensive), communication objective (inform/summarize/persuade/educate/announce/report/analyze/comply), and content style (narrative/bullet/structured/conversational/formal/executive/creative).
+- **Configurable generation parameters:** Target audience (5 built-in + unlimited custom policy profiles), tone (formal/professional/technical/friendly/persuasive/neutral/concise), language (en/es/fr/de/ja/zh/hi/pt), level of detail (brief/standard/detailed/comprehensive), communication objective (inform/summarize/persuade/educate/announce/report/analyze/comply), and content style (narrative/bullet/structured/conversational/formal/executive/creative).
 
 ## Features
 
 - **Ingestion** — PDF, DOCX, PPTX (local `jszip`), TXT, MD, CSV, JSON, HTML, images & video/audio with isolated parsers + quality gate (`scoreTextQuality`); Images OCR locally via `tesseract.js`+`sharp`; Docling worker for enhanced OCR & scanned PDFs
-- **Detection** — PII, secrets, prompt injection, internal assets, unsafe URLs (heuristic + entropy)
+- **Detection** — PII (emails, phones, Aadhaar/PAN/SSN/passports/licenses, addresses, DOB), financial data (cards + Luhn, CVV/expiry, IBAN/IFSC/UPI/bank accounts), secrets (AWS/Azure/GCP/Stripe/GitHub/GitLab/npm/Slack, JWT, SSH/PGP, DB URLs, Bearer/Basic), prompt injection (override phrases, jailbreaks, role tricks, tool calls, hidden directives), internal assets (IPv4/IPv6, internal hosts, project names), unsafe URLs — heuristic + entropy + context-gated
+- **Scan options** — detector families and confidence floor tunable per document (output DLP always full-scan)
 - **Risk scoring** — Weighted, transparent breakdown with classification (PUBLIC → RESTRICTED)
-- **Policy engine** — 5 audience profiles (Public, Internal, Executive, HR, Security) with allow / mask / remove / block
-- **Sanitization** — Mask / redact / quarantine working copy; `<UNTRUSTED_DOCUMENT>` isolation for LLM
+- **Policy engine** — 5 built-in audience profiles (Public, Internal, Executive, HR, Security) + unlimited custom policies (create/clone/edit from the Policy Studio or API) with allow / mask / remove / block; framework-aligned templates (OWASP GenAI, GDPR, HIPAA Safe Harbor, PCI DSS)
+- **Sanitization** — Mask / redact / replace / quarantine working copy; per-finding reviewer overrides; `<UNTRUSTED_DOCUMENT>` isolation for LLM
 - **Transformation** — 15 artefacts with 6 configurable dimensions (audience, tone, language, detail, objective, style); batch generation; grounding citations
 - **Output validation** — DLP rescan, HTML sanitization, grounding check, auto-repair
 - **Operations** — Dashboard, documents, intelligence (entities / IOCs / TTPs), policy comparison, audit trail, batch history
@@ -201,6 +202,23 @@ Generation is **always** `sanitized working copy → LLM inside `<UNTRUSTED_DOCU
 
 Injection spans are always quarantined (`QUARANTINE`).
 
+### Custom policies
+
+Built-ins are immutable — the Policy Studio (or `POST /api/v1/policies`) clones them into editable custom policies (create / edit / activate / delete, max 50). Every bucket entry must be an engine-known finding type or category; credentials and injections can never be allow-listed (rejected with `400`).
+
+Framework-aligned starting points (clone, review with your compliance team — not certifications):
+
+| Template | Aligned with |
+|---|---|
+| `OWASP_GENAI_STRICT` | OWASP GenAI LLM Top 10 (LLM01 injection, LLM02 disclosure, LLM06 agency) |
+| `GDPR_MINIMIZED` | GDPR Art. 5(1)(c) data minimisation |
+| `HIPAA_SAFE_HARBOR` | HIPAA §164.514(b)(2), 18 identifier classes |
+| `PCI_DSS_SAFE` | PCI DSS Req. 3, account-data protection |
+
+### Finding-level control & scan options
+
+After scanning, reviewers can overrule any finding's action (keep / mask / redact / replace / quarantine) and sanitize with their choices — locked so secrets can never be kept and injections stay quarantined. Scan options tune detector families and the confidence floor per document; output DLP always scans everything.
+
 ## API
 
 ```
@@ -208,22 +226,24 @@ POST   /api/v1/documents                    # file (multipart) | { sampleId } | 
 GET    /api/v1/documents                    # ?status=&take=&skip=
 GET    /api/v1/documents/:id
 DELETE /api/v1/documents/:id
-POST   /api/v1/documents/:id/scan
-POST   /api/v1/documents/:id/sanitize       # { policy }
-POST   /api/v1/documents/:id/transform      # { profile, outputType | outputTypes[] (1..8), tone, language, detailLevel, objective, style }
+POST   /api/v1/documents/:id/scan          # { config? } — detector families + minConfidence
+POST   /api/v1/documents/:id/sanitize       # { policy, findingActions[]? } — per-finding reviewer overrides
+POST   /api/v1/documents/:id/transform      # { profile, outputType | outputTypes[] (1..8), tone, language, detailLevel, objective, style } — partial batch returns { errors[] }
 GET    /api/v1/documents/:id/security-report
 GET    /api/v1/documents/:id/history
 GET    /api/v1/documents/:id/intelligence   # GET (cached) | POST (force refresh)
-POST   /api/v1/documents/:id/policy-compare # { profiles[], outputType }
+POST   /api/v1/documents/:id/policy-compare # { profiles[] (1..10, built-ins + customs), outputType }
 GET    /api/v1/stats
 GET    /api/v1/audit                        # ?take=
 GET    /api/v1/policies                     # GET list | POST create
+PUT    /api/v1/policies/:name                # update custom policy (built-ins: 403)
+DELETE /api/v1/policies/:name                # delete custom policy (built-ins: 403)
 GET    /api/v1/samples
 POST   /api/v1/seed
 GET    /api/health                          # (also /api) -> { status, database, llm, pipeline }
 ```
 
-`profile`: `PUBLIC_RELEASE | INTERNAL_SUMMARY | EXECUTIVE_BRIEF | HR_SAFE | SECURITY_INCIDENT` (target audience)  
+`profile`: `PUBLIC_RELEASE | INTERNAL_SUMMARY | EXECUTIVE_BRIEF | HR_SAFE | SECURITY_INCIDENT` or any custom policy name (target audience)  
 `outputType` (15): `EXECUTIVE_SUMMARY | FAQ | TECHNICAL_REPORT | SLIDE_OUTLINE | EMAIL_DRAFT | PRESS_RELEASE | SOCIAL_POST | NEWSLETTER | POLICY_BRIEF | TRAINING_GUIDE | INCIDENT_SUMMARY | RESEARCH_DIGEST | ANNOUNCEMENT | BLOG_POST | MEETING_MINUTES`  
 `outputTypes[]` (batch 1..8) and generation controls `tone`, `language` (`en/es/fr/de/ja/zh/hi/pt`), `detailLevel` (`brief/standard/detailed/comprehensive`), `objective` (`inform/summarize/persuade/educate/announce/report/analyze/comply`), `style` (`narrative/bullet/structured/conversational/formal/executive/creative`) are all documented in `docs/api.md`.
 
@@ -260,7 +280,7 @@ CI runs on every push/PR via `.github/workflows/ci.yml`; security scans via `sec
 
 - Parser isolation, size/MIME validation, SSRF guards
 - Pre-LLM scan + post-LLM DLP (double gate) with deterministic repair
-- Policy-enforced sanitization (5 profiles, allow / mask / remove / block)
+- Policy-enforced sanitization — built-in + custom profiles (allow / mask / remove / block), per-finding reviewer overrides, injection quarantine no policy or override can lift
 - Audit log for every state transition (upload, scan, sanitize, transform, release)
 - Security headers: CSP, HSTS, X-Frame-Options, etc. (next.config + proxy + Caddy)
 - Rate limiting per IP/route (in-memory; swap to Redis in production)

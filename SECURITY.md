@@ -22,9 +22,9 @@ This repository is a **prototype** for SIH26154. It demonstrates security contro
 ## Security controls in this prototype
 
 - **Zero-trust ingestion:** every file is validated for size/MIME, parsed in isolation, and scanned before reaching the model.
-- **Detectors:** multi-signal PII / secret / prompt-injection scans with confidence scores (`src/lib/security/detectors.ts`).
-- **Policy engine:** `allow / mask / remove / block` buckets per transformation profile (`src/lib/security/policies.ts`).
-- **Sanitization:** mask/redact/replace/quarantine; injection spans are always quarantined (`src/lib/security/sanitize.ts`).
+- **Detectors:** multi-signal PII / financial / secret / prompt-injection scans with confidence scores and per-document scan options (`src/lib/security/detectors.ts`). Output DLP always scans everything.
+- **Policy engine:** `allow / mask / remove / block` buckets over 5 immutable built-in profiles plus user-created custom policies and framework templates (`src/lib/security/policies.ts`, `policy-templates.ts`). Credentials and injections can never be allow-listed; injections are always quarantined.
+- **Sanitization:** mask/redact/replace/quarantine plus reviewer per-finding overrides that cannot weaken the invariants (`src/lib/security/sanitize.ts`).
 - **Output DLP:** deterministic re-scan before release (`src/lib/security/output-dlp.ts`).
 - **Trust boundaries** T1–T7 each with validation, auth, logging, and rate-limit notes (see `docs/threat-model.md`).
 

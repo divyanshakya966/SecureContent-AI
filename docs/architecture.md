@@ -23,32 +23,35 @@ The platform is an **intelligent content transformation engine**: it analyses th
 
 | Component | File | Responsibility |
 |---|---|---|
-| Parsers | `src/lib/parsers.ts` | Size/MIME validation (25 MB), PDF/DOCX/HTML extraction, image/video placeholders, Docling proxy (T2) |
-| Detectors | `src/lib/security/detectors.ts` | PII / secrets / injection / internal assets / unsafe URLs |
+| Parsers | `src/lib/parsers.ts` | Pre-read size caps (10 MB docs / 25 MB media), MIME validation, PDF/DOCX/HTML extraction, image/video placeholders, Docling proxy (T2) |
+| Detectors | `src/lib/security/detectors.ts` | PII / financial / secrets / injection / internal assets / unsafe URLs; per-document scan config (families + confidence floor); output DLP always full-scan |
 | Risk | `src/lib/security/risk.ts` | Weighted risk, classification (PUBLIC→RESTRICTED) |
-| Sanitize | `src/lib/security/sanitize.ts` | Policy-driven mask/redact/quarantine → sanitized working copy |
+| Sanitize | `src/lib/security/sanitize.ts` | Policy buckets + reviewer per-finding overrides (injection/secret invariants enforced) → sanitized working copy |
+| Policies | `src/lib/security/policies.ts` + `policy-templates.ts` | 5 immutable built-ins, custom CRUD (max 50), framework templates (OWASP GenAI, GDPR, HIPAA, PCI DSS) |
 | Transform | `src/lib/ai/transform.ts` | LLM envelope (`<UNTRUSTED_DOCUMENT>`), 15 output instructions, 6 generation dimensions, grounding citations, Gemini→Groq→offline fallback |
 | Output DLP | `src/lib/security/output-dlp.ts` + `outputSanitizer.ts` | HTML/JS sanitize, DLP rescan, auto-repair |
 | Intelligence | `src/lib/intelligence/` | Entity/IOC/TTP/Risk extraction, MITRE ATT&CK |
 | Storage | `prisma/schema.prisma` | SQLite (dev/Docker) or Postgres (cloud): Document, Finding, Transformation (with tone/language/detail/objective/style/batchId), AuditLog, Policy, IntelligenceReport |
-| Frontend | `src/app/page.tsx`, `components/secure/` | Dashboard, ingest, documents, transform studio (configurable), policy lab, intelligence, audit |
+| Frontend | `src/app/page.tsx`, `components/secure/` | Dashboard, ingest, documents, transform studio (configurable), policy studio (custom CRUD + templates), policy lab (built-ins + customs), intelligence, audit |
 
 ## Flows
 
 ### 1. Ingest & Scan
-1. `POST /documents` — validate (Zod), parse (isolated, SSRF-guarded Docling optional), `scanContent` → `computeRisk` → classify → store `SCANNED` → build intelligence → audit `UPLOAD`.
+1. `POST /documents` — validate (Zod, multipart bounds match JSON), pre-read size caps, parse (isolated, SSRF-guarded Docling optional), `scanContent` → `computeRisk` → classify → store `SCANNED` → build intelligence → audit `UPLOAD`.
+   Re-scan (`POST /documents/:id/scan`) accepts an optional `{ config }` (detector families + `minConfidence`), persisted per document and reused by default.
 
 ### 2. Sanitize
-2. `POST /documents/:id/sanitize` `{ policy }` — map findings → policy buckets (allow/mask/remove/block, injections always quarantine) → `sanitizeContent` → compute residual risk → store `SANITIZED`/`BLOCKED` → audit.
+2. `POST /documents/:id/sanitize` `{ policy, findingActions[]? }` — map findings → policy buckets (allow/mask/remove/block, injections always quarantine) with reviewer per-finding overrides applied on top (secret/injection `ALLOW` rejected and engine-degraded) → `sanitizeContent` → compute residual risk → store `SANITIZED`/`BLOCKED` (+ `sanitizedPolicy` marker) → audit.
 
 ### 3. Transform (single or batch via `outputTypes[]`)
 3. `POST /documents/:id/transform` `{ profile, outputType | outputTypes[] (1..8), tone, language, detailLevel, objective, style }`
-   - Ensures sanitized copy exists (auto-sanitizes if missing).
+   - Ensures sanitized copy exists **under the requested profile** (auto-sanitizes if missing or stale from another profile).
    - For each requested `OutputType`:
      - Assembles prompt: system non-negotiables + profile constraint + output instruction + tone/language/detail/objective/style.
      - Calls `transformContent` (Gemini with 20s timeout → Groq → offline mock in dev/test).
      - Runs `sanitizeOutputHtml` → `runOutputDlp` → repair if needed.
-     - Persists `Transformation` with generation params and `batchId`.
+     - Persists `Transformation` with generation params and `batchId`; `policyStatus` mirrors validation (fails if DLP/grounding failed).
+   - Item failures don't abort the batch: successes persist, failures listed in `errors[]`; all-failed returns 502/503.
    - Updates `Document` to `TRANSFORMED`, audits each artefact.
 
 ### 4. Validate & Deliver
@@ -58,7 +61,7 @@ The platform is an **intelligent content transformation engine**: it analyses th
 
 | Dimension | Values | Effect |
 |---|---|---|
-| **Audience / Profile** | `PUBLIC_RELEASE` … `SECURITY_INCIDENT` | Selects policy buckets; sanitization before LLM |
+| **Audience / Profile** | `PUBLIC_RELEASE` … `SECURITY_INCIDENT` + custom policy names | Selects policy buckets; sanitization before LLM; stale copies re-sanitized on profile change |
 | **Tone** | formal, professional, technical, friendly, persuasive, neutral, concise | Injected into system/user prompt |
 | **Language** | en, es, fr, de, ja, zh, hi, pt | Directs LLM to write entirely in target language |
 | **Detail** | brief, standard, detailed, comprehensive | Controls length (120 → 700 words) |
