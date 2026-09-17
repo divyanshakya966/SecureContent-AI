@@ -14,7 +14,34 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
+      - name: Check dependency review availability
+        id: dependency-graph-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          COMPARE_URL="https://api.github.com/repos/${{ github.repository }}/dependency-graph/compare/${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
+          HTTP_CODE="$(curl -sS -o /tmp/dependency-graph-response.json -w "%{http_code}" \
+            -H "Accept: application/vnd.github+json" \
+            -u "x-access-token:${GH_TOKEN}" \
+            "${COMPARE_URL}")"
+
+          if [ "${HTTP_CODE}" = "200" ]; then
+            echo "supported=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if [ "${HTTP_CODE}" = "403" ] || [ "${HTTP_CODE}" = "404" ]; then
+            echo "supported=false" >> "${GITHUB_OUTPUT}"
+            echo "Dependency graph compare API is unavailable (HTTP ${HTTP_CODE}). Skipping dependency review. Enable Dependency graph in repository security settings to enforce this check."
+            exit 0
+          fi
+
+          echo "Unexpected HTTP ${HTTP_CODE} from dependency graph compare API"
+          cat /tmp/dependency-graph-response.json
+          exit 1
       - name: Dependency review (fail on HIGH/CRITICAL)
+        if: steps.dependency-graph-check.outputs.supported == 'true'
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
