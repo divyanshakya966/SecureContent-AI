@@ -4,6 +4,7 @@ import { serializePolicy, logAudit, stringifyArr } from "@/lib/api/helpers";
 import { isBuiltinPolicy, validatePolicyBuckets } from "@/lib/security/policies";
 import { PolicyUpdateSchema, parseOr400 } from "@/lib/validation/schemas";
 import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
+import { requireApiAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -14,11 +15,13 @@ async function loadPolicy(name: string) {
   return db.policy.findUnique({ where: { name } });
 }
 
-// PUT /api/v1/policies/[name] — update a CUSTOM policy. Built-ins are immutable.
+
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ name: string }> }
 ) {
+  const _auth = requireApiAuth(req);
+  if (_auth) return _auth;
   const { name } = await params;
   const rl = checkRateLimit(rateLimitKey(req, `PUT /api/v1/policies:${name}`), { max: 15, windowMs: 60_000 });
   if (!rl.allowed) return NextResponse.json({ error: "Rate limited" }, { status: 429, headers: rateLimitHeaders(rl, 15) });
@@ -34,7 +37,7 @@ export async function PUT(
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400, headers: rateLimitHeaders(rl, 15) });
   const data = parsed.data;
 
-  // Validate the merged bucket set so partial updates can't smuggle conflicts.
+  // Validate merged buckets; partial updates must stay conflict-free.
   const current = serializePolicy(existing);
   const merged = {
     allow: data.allow ?? current.allow,
@@ -64,11 +67,13 @@ export async function PUT(
   return NextResponse.json({ policy: serializePolicy(updated) }, { headers: rateLimitHeaders(rl, 15) });
 }
 
-// DELETE /api/v1/policies/[name] — delete a CUSTOM policy. Built-ins are protected.
+
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ name: string }> }
 ) {
+  const _auth = requireApiAuth(req);
+  if (_auth) return _auth;
   const { name } = await params;
   const rl = checkRateLimit(rateLimitKey(req, `DELETE /api/v1/policies:${name}`), { max: 15, windowMs: 60_000 });
   if (!rl.allowed) return NextResponse.json({ error: "Rate limited" }, { status: 429, headers: rateLimitHeaders(rl, 15) });

@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { serializeDocument, logAudit } from "@/lib/api/helpers";
-import { scanContent, computeRisk } from "@/lib/security";
-import { buildIntelligenceReport } from "@/lib/intelligence/extractor";
+import { ingestDocument as createDocument, sanitizeFilename } from "@/lib/ingest";
 import { SAMPLE_DOCUMENTS } from "@/lib/security/samples";
 import { parseDocument } from "@/lib/parsers";
 import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
+import { requireApiAuth } from "@/lib/auth";
 import { DocumentUploadJsonSchema, PaginationSchema, parseOr400 } from "@/lib/validation/schemas";
 
 export const runtime = "nodejs";
 
 const REQUEST_ID_HEADER = "x-request-id";
 
-// GET /api/v1/documents — list documents (optional ?status=, ?take=, ?skip=)
+
 export async function GET(req: NextRequest) {
   const rl = checkRateLimit(rateLimitKey(req, "GET /api/v1/documents"), { max: 60, windowMs: 60_000 });
   if (!rl.allowed) {
@@ -49,10 +49,10 @@ export async function GET(req: NextRequest) {
   );
 }
 
-// POST /api/v1/documents — upload a new document (multipart or JSON)
-// Trust boundary T1 (Browser -> Backend) + T2 (Backend -> Parser):
-// validate size/type, isolate parser errors, never treat file bytes as trusted.
+
 export async function POST(req: NextRequest) {
+  const _auth = requireApiAuth(req);
+  if (_auth) return _auth;
   const rl = checkRateLimit(rateLimitKey(req, "POST /api/v1/documents"), { max: 20, windowMs: 60_000 });
   if (!rl.allowed) {
     return NextResponse.json(
@@ -77,8 +77,7 @@ export async function POST(req: NextRequest) {
       const file = form.get("file");
       const title = (form.get("title") as string) || undefined;
       if (file instanceof File) {
-        // Pre-read guard: File.size is known without loading bytes — reject
-        // oversized uploads before arrayBuffer() can exhaust memory.
+        // Reject oversized uploads before arrayBuffer() loads bytes.
         const preLimit = /^(video\/|audio\/)/.test(file.type || "") || /\.(mp4|mov|webm|avi|mp3|wav|ogg)$/i.test(file.name || "") ? 25 * 1024 * 1024 : 10 * 1024 * 1024;
         if (file.size > preLimit) {
           return NextResponse.json({ error: `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is ${preLimit / 1024 / 1024} MB.` }, { status: 400, headers: rateLimitHeaders(rl, 20) });
@@ -112,7 +111,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ document: serializeDocument(doc) }, { status: 201, headers: rateLimitHeaders(rl, 20) });
       }
       if (title) {
-        // Multipart paste path — validate with the same bounds as the JSON path.
+
         if (title.length > 200) {
           return NextResponse.json({ error: "title: must be 200 characters or fewer." }, { status: 400, headers: rateLimitHeaders(rl, 20) });
         }
@@ -171,133 +170,8 @@ export async function POST(req: NextRequest) {
   } catch (e: unknown) {
     console.error(`[documents POST] correlation=${correlationId}`, e);
     const msg = e instanceof Error ? e.message : "Upload failed.";
-    // Do not leak internal stack; return generic message for unexpected errors.
     const isExpected = msg.includes("too large") || msg.includes("parsing") || msg.includes("empty") || msg.includes("OCR") || msg.includes("No extractable");
-    // Empty/OCR failures are user errors → 400
     const isUserError = msg.includes("empty") || msg.includes("OCR") || msg.includes("No extractable");
     return NextResponse.json({ error: isExpected ? msg : "Upload failed." }, { status: isUserError ? 400 : isExpected ? 400 : 500, headers: rateLimitHeaders(rl, 20) });
   }
-}
-
-/** Strip path components, control chars, and brackets from client filenames; cap length. */
-function sanitizeFilename(name: string): string {
-  const base = (name || "upload").split(/[\\/]/).pop() || "upload";
-  return base.replace(/[\x00-\x1F\x7F\[\]\n\r]/g, "").trim().slice(0, 120) || "upload";
-}
-
-async function createDocument(opts: {  filename: string;
-  mimeType: string;
-  content: string;
-  sourceKind: "UPLOAD" | "PASTE" | "SAMPLE";
-  title?: string;
-  parsedMeta?: Record<string, unknown>;
-  warnings?: string[];
-}) {
-  const { normalizeIngestedText: normalizeCreate } = await import("@/lib/text");
-  const rawInput = opts.content;
-  const content = normalizeCreate(rawInput);
-  if (!content.trim()) {
-    throw new Error("Document is empty after text normalization — upload a text-based file or enable OCR.");
-  }
-  const { filename, mimeType, sourceKind } = opts;
-  const title = opts.title || filename.replace(/\.[^.]+$/, "");
-
-  const metaFromParser = opts.parsedMeta;
-  const sha256 = (metaFromParser?.sha256 as string) || (await import("crypto")).createHash("sha256").update(content).digest("hex");
-  const charCount = (metaFromParser?.charCount as number) ?? content.length;
-  const wordCount = (metaFromParser?.wordCount as number) ?? content.trim().split(/\s+/).filter(Boolean).length;
-  const pages = (metaFromParser?.pages as number) ?? Math.max(1, Math.ceil(content.split(/\r?\n/).length / 40));
-  const sections = (metaFromParser?.sections as number) ?? Math.max(1, content.split(/\n\s*\n/).filter((p) => p.trim()).length);
-
-  const rawFindings = scanContent(content);
-  const risk = computeRisk(rawFindings);
-
-  const doc = await db.document.create({
-    data: {
-      filename,
-      mimeType,
-      sizeBytes: Buffer.byteLength(content, "utf8"),
-      title,
-      sourceKind,
-      classification: risk.classification,
-      status: "SCANNED",
-      riskScore: risk.total,
-      riskBefore: risk.total,
-      riskAfter: 0,
-      rawContent: content,
-      metadata: JSON.stringify({
-        sha256,
-        charCount,
-        wordCount,
-        pages,
-        sections,
-        sourceFormat: mimeType,
-        parser: (metaFromParser?.parser as string) || "direct",
-        warnings: opts.warnings ?? [],
-        ...(metaFromParser || {}),
-      }),
-      findings: {
-        create: rawFindings.map((f) => ({
-          category: f.category,
-          type: f.type,
-          severity: f.severity,
-          confidence: f.confidence,
-          action: f.defaultAction,
-          stage: f.stage,
-          location: `char_offset:${f.start}-${f.end}`,
-          matchedText: f.matchedText,
-          maskedText: f.maskedText,
-          reason: f.reason,
-        })),
-      },
-    },
-    include: { findings: true },
-  });
-
-  try {
-    const intel = buildIntelligenceReport({
-      documentId: doc.id,
-      rawContent: content,
-      findings: rawFindings,
-      classification: risk.classification,
-      riskScore: risk.total,
-    });
-    await db.intelligenceReport.create({
-      data: {
-        documentId: doc.id,
-        entities: JSON.stringify(intel.entities),
-        iocs: JSON.stringify(intel.iocs),
-        ttps: JSON.stringify(intel.ttps),
-        risks: JSON.stringify(intel.risks),
-        keyFindings: JSON.stringify(intel.keyFindings),
-        evidence: JSON.stringify(intel.evidence),
-        summary: intel.summary,
-        riskScore: intel.riskScore,
-        classification: intel.classification,
-        model: intel.model,
-      },
-    });
-    await logAudit({
-      documentId: doc.id,
-      actor: "intelligence_engine",
-      action: "INTELLIGENCE_EXTRACT",
-      detail: `Intelligence extracted: ${intel.entities.length} entities, ${intel.iocs.length} IOCs, ${intel.ttps.length} TTPs.`,
-    });
-  } catch (e) {
-    console.warn("[intelligence] extraction failed:", e);
-  }
-
-  const full = await db.document.findUnique({
-    where: { id: doc.id },
-    include: { findings: true, intelligence: true, transformations: true },
-  });
-
-  await logAudit({
-    documentId: doc.id,
-    actor: "analyst",
-    action: "UPLOAD",
-    detail: `Ingested "${title}" (${mimeType}, ${wordCount} words). Initial risk ${risk.total}/100, classification ${risk.classification}.`,
-  });
-
-  return full ?? doc;
 }

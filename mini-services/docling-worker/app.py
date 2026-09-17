@@ -60,9 +60,6 @@ try:
 except Exception:
     _HAS_TESSERACT = False
 
-# ---------------------------------------------------------------------------
-# Quality scoring — mirror of Node's scoreTextQuality to avoid garbage
-# ---------------------------------------------------------------------------
 
 _COMMON_RE = re.compile(
     r"\b(the|and|or|is|to|of|in|for|with|on|as|by|at|from|this|that|was|are|has|have|will|document|report|incident|security|management|policy|data|information|system|user|content|page|section|paragraph)\b",
@@ -84,7 +81,6 @@ def normalize_text(s: str) -> str:
     s = _ZERO_WIDTH_RE.sub("", s)
     s = s.replace("\uFFFD", "")
     s = re.sub(r"\n{3,}", "\n\n", s)
-    # strip lone surrogates
     s = "".join(c for c in s if not (0xD800 <= ord(c) <= 0xDFFF))
     return s.strip()
 
@@ -176,8 +172,7 @@ async def parse(file: UploadFile = File(...)):
     warnings: list[str] = []
     parser = "fallback"
 
-    # Try docling first (best quality for PDF/DOCX/PPTX/images if installed)
-    # Extend to images as well — docling supports OCR if configured
+    # Docling first where installed.
     if _HAS_DOCLING and _converter is not None and suffix in {".pdf", ".docx", ".pptx", ".html", ".md", ".png", ".jpg", ".jpeg", ".webp", ".tiff", ".bmp"}:
         try:
             tmp = Path(f"/tmp/securecontent-{os.getpid()}-{name}")
@@ -231,8 +226,7 @@ async def parse(file: UploadFile = File(...)):
             warnings.append("Image OCR not available — install pillow and pytesseract (and system tesseract-ocr) for local image OCR, or run with Docling OCR")
         # If still no text, return placeholder error so Node shows helpful message rather than garbage
         if not text.strip():
-            # Don't fall through to utf8 hex — return 422 with warnings so Node can show placeholder
-            # But we still want to allow Node to synthesize a metadata placeholder, so we return 422
+            # Return 422 (not utf8 hex) so Node shows a placeholder.
             return JSONResponse({"error": "no extractable text — image requires OCR", "warnings": warnings, "parser": "image-ocr", "filename": name}, status_code=422)
 
     if not text.strip() and suffix == ".pdf" and _HAS_PYMUPDF:
@@ -351,8 +345,7 @@ async def parse(file: UploadFile = File(...)):
         except Exception as e:
             warnings.append(f"SVG parsing failed: {e}")
 
-    # Do NOT fall back to raw utf8 hex for binary — return 422 with warnings
-    # so the Node side can show a clean placeholder instead of obscure characters.
+    # Never return raw utf8 hex for binary.
     if not text.strip():
         # Special case: text family files (.txt/.md/.csv/.json/.html) may be legit utf8
         if suffix in {".txt", ".md", ".csv", ".json", ".html", ".htm", ".log"}:
@@ -365,7 +358,7 @@ async def parse(file: UploadFile = File(...)):
                 pass
         return JSONResponse({"error": "no extractable text", "warnings": warnings, "parser": parser, "filename": name}, status_code=422)
 
-    # Final guard: never return garbage
+
     q = score_quality(text)
     if q["is_garbage"] or q["score"] < 0.28:
         return JSONResponse({"error": "extracted text quality too low — appears garbled", "warnings": warnings + [f"quality score {q['score']:.2f}"], "parser": parser}, status_code=422)

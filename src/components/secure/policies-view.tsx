@@ -227,7 +227,7 @@ export function PoliciesView() {
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0">
                   <Badge className={builtin ? "bg-muted text-muted-foreground border-border" : "bg-primary/10 text-primary border-primary/25"}>{builtin ? "Built-in" : "Custom"}</Badge>
-                  <Badge className={p.active ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20" : "bg-muted text-muted-foreground border-border"}>{p.active ? "Active" : "Inactive"}</Badge>
+                  <Badge className={p.active ? "bg-[var(--risk-safe)]/10 text-[var(--risk-safe)] border-[var(--risk-safe)]/20" : "bg-muted text-muted-foreground border-border"}>{p.active ? "Active" : "Inactive"}</Badge>
                 </div>
               </div>
               <p className="mt-2 text-xs leading-relaxed text-muted-foreground line-clamp-2" title={p.description}>{p.description}</p>
@@ -309,9 +309,6 @@ function Bucket({ icon: Icon, label, items, tone }: { icon: React.ComponentType<
   );
 }
 
-// ---------------------------------------------------------------------------
-// Policy editor dialog
-// ---------------------------------------------------------------------------
 
 function PolicyEditor({
   mode, form, saving, onChange, onSave, onClose,
@@ -331,7 +328,7 @@ function PolicyEditor({
     if (has) {
       buckets[bucket] = buckets[bucket].filter((e) => e !== entry);
     } else {
-      // Each entry belongs in exactly one bucket.
+
       (Object.keys(buckets) as Bucket[]).forEach((b) => {
         buckets[b] = buckets[b].filter((e) => e !== entry);
       });

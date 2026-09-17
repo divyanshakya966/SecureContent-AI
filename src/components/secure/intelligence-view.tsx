@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { documentPath } from "@/lib/nav";
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,16 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Brain, ShieldAlert, Hash, Users, Crosshair, FileSearch, AlertTriangle, Globe, Fingerprint, Inbox } from "lucide-react";
 import { api } from "@/lib/api-client";
 import type { IntelligenceReport, DocumentRecord } from "@/types";
-import { useApp } from "@/lib/store";
 
 const TACTIC_COLOR: Record<string, string> = {
-  "Initial Access": "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30",
-  "Credential Access": "bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/30",
-  "Privilege Escalation": "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30",
-  "Defense Evasion": "bg-violet-500/10 text-violet-700 dark:text-violet-400 border-violet-500/30",
-  "Discovery": "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30",
-  "Lateral Movement": "bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-500/30",
-  "Exfiltration": "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/30",
+  "Initial Access": "bg-[var(--risk-high)]/10 text-[var(--risk-high)] border-[var(--risk-high)]/30",
+  "Credential Access": "bg-[var(--risk-critical)]/10 text-[var(--risk-critical)] border-[var(--risk-critical)]/30",
+  "Privilege Escalation": "bg-[var(--risk-medium)]/10 text-[var(--risk-medium)] border-[var(--risk-medium)]/30",
+  "Defense Evasion": "bg-[var(--chart-5)]/10 text-[var(--chart-5)] border-[var(--chart-5)]/30",
+  "Discovery": "bg-[var(--chart-4)]/10 text-[var(--chart-4)] border-[var(--chart-4)]/30",
+  "Lateral Movement": "bg-primary/10 text-primary border-primary/30",
+  "Exfiltration": "bg-[var(--risk-critical)]/10 text-[var(--risk-critical)] border-[var(--risk-critical)]/30",
 };
 
 function EmptyIntelligence({ onIngest }: { onIngest: () => void }) {
@@ -58,7 +59,9 @@ function PlaceholderCard({
 }
 
 export function IntelligenceView() {
-  const { openDocument, setView } = useApp();
+  const router = useRouter();
+  const openDocument = (id: string) => router.push(documentPath(id));
+  const goIngest = () => router.push("/ingest");
   const [docs, setDocs] = useState<DocumentRecord[]>([]);
   const [reports, setReports] = useState<Record<string, IntelligenceReport>>({});
   const [selected, setSelected] = useState<string | null>(null);
@@ -90,7 +93,6 @@ export function IntelligenceView() {
   const active = selected ? reports[selected] : null;
   const activeDoc = docs.find((d) => d.id === selected);
 
-  // Aggregates
   const allTTPs = Object.values(reports).flatMap((r) => r.ttps);
   const allIOCs = Object.values(reports).flatMap((r) => r.iocs);
   const allEntities = Object.values(reports).flatMap((r) => r.entities);
@@ -108,7 +110,7 @@ export function IntelligenceView() {
   }
 
   if (!docs.length) {
-    return <EmptyIntelligence onIngest={() => setView("upload")} />;
+    return <EmptyIntelligence onIngest={goIngest} />;
   }
 
   const hasAnyReport = Object.keys(reports).length > 0;
@@ -125,7 +127,7 @@ export function IntelligenceView() {
             Entities, IOCs, TTPs (MITRE ATT&CK), risks and key findings — extracted automatically after scan and filtered per audience policy. No mock data is shown until processing completes.
           </p>
         </div>
-        <Badge className="bg-card border-border font-mono text-xs shrink-0">
+        <Badge className="bg-card border-border font-mono text-xs text-foreground shrink-0">
           {Object.keys(reports).length} reports · {allEntities.length} entities · {allIOCs.length} IOCs · {allTTPs.length} TTPs
         </Badge>
       </div>
@@ -234,7 +236,7 @@ export function IntelligenceView() {
                 </div>
                 <button
                   onClick={() => openDocument(activeDoc.id)}
-                  className="rounded-md border border-border bg-card px-2.5 py-1 text-xs hover:bg-muted"
+                  className="rounded-md border border-border bg-muted px-2.5 py-1 text-xs hover:bg-muted/60"
                 >
                   Open document →
                 </button>
@@ -266,7 +268,7 @@ export function IntelligenceView() {
                     active.iocs.slice(0, 12).map((i, idx) => (
                       <div key={idx} className="flex items-center justify-between rounded border bg-muted/30 px-2 py-1.5">
                         <span className="text-xs font-mono truncate" title={i.value}>{i.value}</span>
-                        <span className={`ml-2 shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${i.severity === "CRITICAL" ? "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30" : i.severity === "HIGH" ? "bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/30" : "bg-muted text-muted-foreground"}`}>{i.type}</span>
+                        <span className={`ml-2 shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${i.severity === "CRITICAL" ? "bg-[var(--risk-critical)]/10 text-[var(--risk-critical)] border-[var(--risk-critical)]/30" : i.severity === "HIGH" ? "bg-[var(--risk-high)]/10 text-[var(--risk-high)] border-[var(--risk-high)]/30" : "bg-muted text-muted-foreground"}`}>{i.type}</span>
                       </div>
                     ))
                   ) : (
@@ -309,7 +311,7 @@ export function IntelligenceView() {
                     active.risks.map((r, i) => (
                       <div key={i} className="rounded border bg-muted/30 p-2.5">
                         <div className="flex items-center gap-2">
-                          <span className={`h-2 w-2 rounded-full ${r.severity === "CRITICAL" ? "bg-red-500" : r.severity === "HIGH" ? "bg-orange-500" : r.severity === "MEDIUM" ? "bg-amber-500" : "bg-emerald-500"}`} />
+                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: r.severity === "CRITICAL" ? "var(--risk-critical)" : r.severity === "HIGH" ? "var(--risk-high)" : r.severity === "MEDIUM" ? "var(--risk-medium)" : "var(--risk-safe)" }} />
                           <span className="text-xs font-semibold">{r.category}</span>
                           <span className="ml-auto text-[10px] rounded border bg-card px-1">{r.severity}</span>
                         </div>
@@ -329,7 +331,7 @@ export function IntelligenceView() {
                     active.keyFindings.map((kf, i) => (
                       <div key={i} className="rounded border bg-card p-2.5">
                         <div className="text-xs leading-relaxed">{kf.finding}</div>
-                        <div className="mt-1 font-mono text-[11px] text-muted-foreground">{kf.evidence} · <span className={kf.grounded ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}>{kf.grounded ? "grounded" : "ungrounded"}</span></div>
+                        <div className="mt-1 font-mono text-[11px] text-muted-foreground">{kf.evidence} · <span className={kf.grounded ? "text-[var(--risk-safe)]" : "text-[var(--risk-medium)]"}>{kf.grounded ? "grounded" : "ungrounded"}</span></div>
                       </div>
                     ))
                   ) : (

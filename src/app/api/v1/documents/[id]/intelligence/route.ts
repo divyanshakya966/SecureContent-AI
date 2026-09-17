@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ensureIntelligence } from "@/lib/intelligence/service";
 import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
+import { requireApiAuth } from "@/lib/auth";
 import { DocumentIdSchema, parseOr400 } from "@/lib/validation/schemas";
 
 export const runtime = "nodejs";
@@ -30,6 +31,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const _auth = requireApiAuth(req);
+  if (_auth) return _auth;
   const { id } = await params;
   const idCheck = parseOr400(DocumentIdSchema, id);
   if (!idCheck.ok) return NextResponse.json({ error: idCheck.error }, { status: 400 });

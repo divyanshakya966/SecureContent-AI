@@ -1,7 +1,5 @@
-// SecureContent AI — Detection engine
-// Multi-signal detection: structured recognizers + regex + entropy + heuristics.
-// Every detector returns RawFinding[] with character offsets so sanitization
-// can precisely replace the sensitive span.
+// Detection engine: recognizers + regex + entropy + heuristics. Every finding
+// carries character offsets for precise sanitization.
 
 import type {
   FindingCategory,
@@ -33,13 +31,10 @@ export interface DetectorMatch {
   groups?: string[];
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function reScan(re: RegExp, text: string): DetectorMatch[] {
   const matches: DetectorMatch[] = [];
-  // Ensure global flag so we can iterate; clone with 'g' if missing.
+  // Clone with a global flag when missing.
   const global = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
   let m: RegExpExecArray | null;
   while ((m = global.exec(text)) !== null) {
@@ -52,7 +47,7 @@ function reScan(re: RegExp, text: string): DetectorMatch[] {
   return matches;
 }
 
-// Shannon entropy over the printable characters of a token.
+
 function shannonEntropy(s: string): number {
   if (!s) return 0;
   const freq = new Map<string, number>();
@@ -66,7 +61,7 @@ function shannonEntropy(s: string): number {
   return h;
 }
 
-// Is this character offset inside an existing finding span? (avoids double counting)
+
 function overlaps(a: { start: number; end: number }, findings: RawFinding[]): boolean {
   return findings.some((f) => a.start < f.end && a.end > f.start);
 }
@@ -108,12 +103,9 @@ function normalizeInvisible(s: string): string {
     .replace(/­/g, "");
 }
 
-// ---------------------------------------------------------------------------
-// PII detectors
-// ---------------------------------------------------------------------------
 
 const PII_EMAIL = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-// UPI handles look like emails (name@upi). Distinguish via known handles list.
+
 const UPI_HANDLES = new Set([
   "upi", "ybl", "okhdfc", "okhdfcbank", "okicici", "oksbi", "okaxis", "paytm",
   "ibl", "axl", "apl", "abfspay", "eze", "idbi", "hsbc", "kotak", "pnb", "sbi",
@@ -175,7 +167,7 @@ function detectPII(text: string, opts?: { internalAssets?: boolean; unsafeUrls?:
   const wantUnsafeUrls = opts?.unsafeUrls ?? true;
 
   for (const m of reScan(PII_EMAIL, text)) {
-    // UPI handles are classified separately — skip email here to avoid double count.
+
     const domain = (m.matched.split("@")[1] ?? "").toLowerCase();
     if (UPI_HANDLES.has(domain)) continue;
     findings.push({
@@ -187,7 +179,7 @@ function detectPII(text: string, opts?: { internalAssets?: boolean; unsafeUrls?:
     });
   }
 
-  // UPI / VPA identifiers (name@handle).
+
   for (const m of reScan(PII_UPI, text)) {
     if (overlaps(m, findings)) continue;
     const handle = (m.matched.split("@")[1] ?? "").toLowerCase();
@@ -202,7 +194,7 @@ function detectPII(text: string, opts?: { internalAssets?: boolean; unsafeUrls?:
     });
   }
 
-  // Credit-card before Aadhaar/PAN/IDs so 16-digit groups classify as payment data.
+  // Cards before IDs so 16-digit groups classify as payment data.
   for (const m of reScan(PII_CREDIT_CARD, text)) {
     if (overlaps(m, findings)) continue;
     const digits = m.matched.replace(/\D/g, "");
@@ -289,7 +281,7 @@ function detectPII(text: string, opts?: { internalAssets?: boolean; unsafeUrls?:
     });
   }
 
-  // Postal codes — only with address context to avoid flagging every 5-6 digit number.
+  // Postal codes need address context.
   for (const m of reScan(PII_ZIP_US, text)) {
     if (overlaps(m, findings)) continue;
     if (!nearbyKeyword(text, m.start, m.end, ADDR_CONTEXT, 60)) continue;
@@ -313,7 +305,7 @@ function detectPII(text: string, opts?: { internalAssets?: boolean; unsafeUrls?:
     });
   }
 
-  // Street addresses + PO boxes.
+
   for (const re of [PII_STREET, PII_POBOX]) {
     for (const m of reScan(re, text)) {
       if (overlaps(m, findings)) continue;
@@ -327,7 +319,7 @@ function detectPII(text: string, opts?: { internalAssets?: boolean; unsafeUrls?:
     }
   }
 
-  // Bank identifiers: IBAN (mod-97 validated), IFSC, CVV, expiry, account numbers.
+
   for (const m of reScan(PII_IBAN, text)) {
     if (overlaps(m, findings)) continue;
     const compact = m.matched.replace(/[\s-]/g, "");
@@ -389,7 +381,7 @@ function detectPII(text: string, opts?: { internalAssets?: boolean; unsafeUrls?:
     });
   }
 
-  // Phones — run all patterns, dedupe by overlap. Card/Aadhaar/IDs win overlaps.
+  // All phone patterns, deduped; cards/IDs win overlaps.
   const phoneMatches: DetectorMatch[] = [];
   for (const re of [PII_PHONE_IN, PII_PHONE_INTL, PII_PHONE_UK, PII_PHONE_GENERIC]) {
     for (const m of reScan(re, text)) {
@@ -398,7 +390,7 @@ function detectPII(text: string, opts?: { internalAssets?: boolean; unsafeUrls?:
   }
   for (const m of phoneMatches) {
     if (overlaps(m, findings)) continue;
-    // Never match a slice of a longer digit run (card/ID/account fragments).
+    // Skip slices of longer digit runs.
     if (/\d/.test(text[m.start - 1] ?? "") || /\d/.test(text[m.end] ?? "")) continue;
     const digits = m.matched.replace(/\D/g, "");
     if (digits.length < 8 || digits.length > 15) continue;
@@ -412,7 +404,7 @@ function detectPII(text: string, opts?: { internalAssets?: boolean; unsafeUrls?:
     });
   }
 
-  // Dates of birth: month-name (standalone) + numeric (context-gated).
+
   for (const m of reScan(PII_DOB_MON, text)) {
     if (overlaps(m, findings)) continue;
     findings.push({
@@ -516,7 +508,7 @@ function detectPII(text: string, opts?: { internalAssets?: boolean; unsafeUrls?:
   }
   }
 
-  // Person names — role labels (expanded) + contact-adjacent heuristic.
+
   const nameRe = /(?:Project Lead|Engineer|Lead|Manager|Analyst|Officer|Member|Director|Architect|Contact|Author|Owner|Reporter|Supervisor|Coordinator|Administrator|Customer|Client|Candidate|Recruiter|Colleague|Prepared by|Reported by|Full Name|Name|POC)\s*[:\-]\s*([A-Z][a-z]+(?:['-][A-Za-z]+)?(?:\s+[A-Z][a-z]+(?:['-][A-Za-z]+)?){1,2})/g;
   for (const m of reScan(nameRe, text)) {
     const inner = /[:\-]\s*([A-Z][a-z]+(?:['-][A-Za-z]+)?(?:\s+[A-Z][a-z]+(?:['-][A-Za-z]+)?){1,2})/;
@@ -552,9 +544,6 @@ function maskPhone(phone: string): string {
   return `***-***-${digits.slice(-2)}`;
 }
 
-// ---------------------------------------------------------------------------
-// Secret detectors
-// ---------------------------------------------------------------------------
 
 const SECRET_AWS_ID = /\b(?:AKIA|ASIA)[0-9A-Z]{12,20}\b/g;
 const SECRET_AWS_SECRET_KV = /(?:aws[_-]?secret[_-]?access[_-]?key)["'\s:=]+([A-Za-z0-9/+=]{30,})/gi;
@@ -578,13 +567,13 @@ const SECRET_BASIC = /\bBasic\s+[A-Za-z0-9+/=]{12,}/g;
 const SECRET_GENERIC_SK = /\bsk-[A-Za-z0-9]{14,}\b/g;
 const SECRET_API_KEY_KV = /\b(?:api[_-]?key|secret|token|password|passwd|pwd|access[_-]?token|client[_-]?secret)["'\s:=]+([A-Za-z0-9_\-./+]{12,})/gi;
 
-// Common English words that must never be treated as secret values.
+
 const SECRET_STOPWORDS = new Set([
   "distribution", "description", "document", "information", "production", "management",
   "authentication", "authorization", "configuration", "following", "however", "therefore",
 ]);
 
-// Context words that boost secret confidence.
+
 const SECRET_CONTEXT = /\b(token|secret|password|passwd|credential|api[_-]?key|access[_-]?key|private[_-]?key|authorization|bearer|client[_-]?secret)\b/gi;
 
 function detectSecrets(text: string): RawFinding[] {
@@ -664,7 +653,7 @@ function detectSecrets(text: string): RawFinding[] {
     push(m, "API_KEY", "sk-", 0.9, "OpenAI-style API key prefix matched.");
   }
 
-  // Key/value secret assignments — capture group 1 is the value; FP-guarded.
+  // Key/value assignments use capture group 1; FP-guarded.
   for (const m of reScan(SECRET_API_KEY_KV, text)) {
     if (overlaps(m, findings)) continue;
     const value = (m.groups?.[0] ?? "").trim().replace(/["';,]+$/g, "");
@@ -712,9 +701,6 @@ function secretFinding(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Prompt-injection detectors
-// ---------------------------------------------------------------------------
 
 const INJECTION_PHRASES: { re: RegExp; reason: string; severity: Severity }[] = [
   { re: /ignore (?:all )?(?:previous|prior) instructions/gi, reason: "Classic prompt-injection override phrase.", severity: "CRITICAL" },
@@ -847,8 +833,7 @@ function detectPromptInjection(text: string): RawFinding[] {
     });
   }
 
-  // Invisible-character smuggling: zero-width/bidi chars co-occurring with
-  // injection language in the normalized text.
+  // Zero-width/bidi chars co-occurring with injection language.
   if (/[​‌‍﻿⁠‮‭‪⁦⁧⁨⁩­]/.test(text)) {
     const clean = normalizeInvisible(text).toLowerCase();
     const markers = ["ignore previous instructions", "disregard", "reveal the system prompt", "jailbreak", "system override"];
@@ -869,9 +854,6 @@ function detectPromptInjection(text: string): RawFinding[] {
   return findings;
 }
 
-// ---------------------------------------------------------------------------
-// Output-stage detector (used by Output DLP to re-scan generated content)
-// ---------------------------------------------------------------------------
 
 export function detectOutputLeakage(text: string): RawFinding[] {
   const leaks: RawFinding[] = [];
@@ -884,9 +866,6 @@ export function detectOutputLeakage(text: string): RawFinding[] {
   return leaks;
 }
 
-// ---------------------------------------------------------------------------
-// Public orchestration: scan a document end-to-end
-// ---------------------------------------------------------------------------
 
 export function scanContent(text: string, config?: ScanConfig): RawFinding[] {
   if (!text) return [];
@@ -898,15 +877,13 @@ export function scanContent(text: string, config?: ScanConfig): RawFinding[] {
     unsafeUrls: config?.unsafeUrls ?? true,
     minConfidence: config?.minConfidence ?? 0,
   };
-  // Secrets before PII so that DB URLs containing email-like substrings are
-  // classified as secrets, not PII. Credit-card before Aadhaar for the same reason.
+  // Secrets before PII so DB URLs with email-like parts classify as secrets.
   const secrets = cfg.secrets ? detectSecrets(text) : [];
   const pii = detectPII(text, cfg);
   const injections = cfg.injections ? detectPromptInjection(text) : [];
-  // Sort by start offset; for overlaps prefer higher confidence / severity.
+
   const merged = [...secrets, ...pii, ...injections];
-  // Family toggles + confidence floor. NOTE: output-stage DLP
-  // (detectOutputLeakage) intentionally ignores config and always scans everything.
+  // Family toggles + confidence floor (output DLP always scans everything).
   const enabled: Record<string, boolean> = {
     PII: cfg.pii,
     SECRET: cfg.secrets,
@@ -919,9 +896,7 @@ export function scanContent(text: string, config?: ScanConfig): RawFinding[] {
   );
   eligible.sort((a, b) => a.start - b.start || b.confidence - a.confidence);
 
-  // De-duplicate overlaps across detectors. Prefer higher category priority,
-  // then higher confidence, then longer span. A span may overlap several
-  // kept findings (not just the first), so check ALL of them.
+  // De-duplicate overlaps: category priority, then confidence, then span length.
   const CATEGORY_PRIORITY: Record<string, number> = {
     SECRET: 5,
     PROMPT_INJECTION: 4,
@@ -936,7 +911,7 @@ export function scanContent(text: string, config?: ScanConfig): RawFinding[] {
       deduped.push(f);
       continue;
     }
-    // Keep the strongest span among {incoming + all overlapped}.
+
     const candidates = [...overlapping, f];
     candidates.sort((a, b) => {
       const pa = CATEGORY_PRIORITY[a.category] ?? 0;
@@ -953,7 +928,7 @@ export function scanContent(text: string, config?: ScanConfig): RawFinding[] {
       }
       deduped.push(f);
     }
-    // else: incoming loses to an existing stronger span — drop it.
+
   }
   deduped.sort((a, b) => a.start - b.start);
   return deduped;

@@ -6,8 +6,9 @@ All input is treated as untrusted until validated.
 
 | ID | Boundary | Controls |
 |---|---|---|
+| T0 | Internet → App (access) | Optional bearer auth (`API_AUTH_TOKEN`, `REQUIRE_AUTH_FOR_READS`), seed gating (`ALLOW_SEED`), per-IP + global rate limits, security headers, Caddy TLS/reverse-proxy |
 | T1 | Browser → Backend | Input validation (Zod, incl. multipart bounds), pre-read size caps (10 MB docs / 25 MB media), MIME allowlist, audit |
-| T2 | Backend → Parser | Isolated parsers, 15s Docling timeout |
+| T2 | Backend → Parser | Isolated parsers, 15s Docling timeout, SSRF allowlist (`isAllowedDoclingUrl`: loopback/RFC1918/service-names only; metadata + public IPs denied) |
 | T3 | Sanitized → LLM | Sanitized copy only, `<UNTRUSTED_DOCUMENT>` envelope, no tool access |
 | T4 | RAG → LLM | Reserved (ACL-filtered retrieval when enabled) |
 | T5 | LLM → Validator | Output treated as untrusted; DLP + grounding |

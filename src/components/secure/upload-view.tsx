@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { UploadCloud, FileText, Loader2, FlaskConical, ShieldX, KeyRound, Bug } from "lucide-react";
 import { api } from "@/lib/api-client";
+import { useRouter } from "next/navigation";
 import { useApp } from "@/lib/store";
+import { documentPath } from "@/lib/nav";
 import type { SampleDocument } from "@/types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { HelpButton } from "@/components/secure/help-button";
+import { BulkIngest } from "@/components/secure/bulk-ingest";
 
 const SAMPLE_ICON = {
   CLEAN: FileText,
@@ -31,7 +34,9 @@ const SAMPLE_TONE: Record<SampleDocument["category"], string> = {
 };
 
 export function UploadView() {
-  const { openDocument, bumpRefresh } = useApp();
+  const { bumpRefresh } = useApp();
+  const router = useRouter();
+  const openDocument = (id: string) => router.push(documentPath(id));
   const [samples, setSamples] = useState<SampleDocument[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -164,7 +169,7 @@ export function UploadView() {
             <p className="mt-1 text-xs text-muted-foreground">PDF · DOCX · PPTX · Images · Video/Audio · TXT · CSV · JSON</p>
           </div>
           <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Parser-isolated · Size/MIME validated
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--risk-safe)]" /> Parser-isolated · Size/MIME validated
           </div>
         </Card>
 
@@ -197,6 +202,8 @@ export function UploadView() {
           </div>
         </Card>
       </div>
+
+      <BulkIngest />
 
       <Card className="p-5">
         <div className="rounded-lg border border-dashed bg-muted/20 p-3 mb-4">

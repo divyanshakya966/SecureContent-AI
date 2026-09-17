@@ -1,6 +1,4 @@
-// SecureContent AI — Lightweight benchmark harness
-// Measures: detection counts, risk_before/after, sanitization leakage, output DLP.
-// Prints a markdown table for the PPT + a JSON summary.
+// Benchmark harness: detection counts, risk before/after, leakage, output DLP.
 
 import { SAMPLE_DOCUMENTS } from "@/lib/security/samples";
 import { scanContent, sanitizeContent, computeRisk, runOutputDlp } from "@/lib/security";

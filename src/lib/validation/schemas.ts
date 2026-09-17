@@ -1,5 +1,4 @@
-// Secure Intelligence — Zod validation for Zero-Trust boundaries
-// Every API input is validated before it reaches the engine.
+// Zod validation for every trust boundary.
 
 import { z } from "zod";
 import { KNOWN_BUCKET_ENTRIES } from "@/lib/security/policies";
@@ -23,15 +22,17 @@ const BucketEntrySchema = z.string().min(1).max(60).refine(
 
 const BucketArraySchema = z.array(BucketEntrySchema).max(100).optional().default([]);
 
+const FindingActionsSchema = z.array(z.object({
+  id: z.string().min(5).max(100).optional(),
+  location: z.string().max(60).optional(),
+  type: z.string().max(60).optional(),
+  action: z.enum(["ALLOW", "MASK", "REDACT", "REPLACE", "QUARANTINE"]),
+})).max(500).optional().default([]);
+
 export const SanitizeSchema = z.object({
   policy: PolicyNameSchema.optional().default("PUBLIC_RELEASE"),
   profile: PolicyNameSchema.optional(),
-  findingActions: z.array(z.object({
-    id: z.string().min(5).max(100).optional(),
-    location: z.string().max(60).optional(),
-    type: z.string().max(60).optional(),
-    action: z.enum(["ALLOW", "MASK", "REDACT", "REPLACE", "QUARANTINE"]),
-  })).max(500).optional().default([]),
+  findingActions: FindingActionsSchema,
 });
 
 const OutputTypeEnum = z.enum([
@@ -52,12 +53,22 @@ const OutputTypeEnum = z.enum([
   "MEETING_MINUTES",
 ]);
 
+export const ToneEnum = z.enum(["formal", "professional", "technical", "friendly", "persuasive", "neutral", "concise"]);
+export const LanguageEnum = z.enum(["en", "es", "fr", "de", "ja", "zh", "hi", "pt"]);
+export const DetailLevelEnum = z.enum(["brief", "standard", "detailed", "comprehensive"]);
+export const ObjectiveEnum = z.enum(["inform", "summarize", "persuade", "educate", "announce", "report", "analyze", "comply"]);
+export const StyleEnum = z.enum(["narrative", "bullet", "structured", "conversational", "formal", "executive", "creative"]);
+
+export const AuditQuerySchema = z.object({
+  take: z.coerce.number().int().min(1).max(200).optional().default(100),
+});
+
 export const TransformSchema = z.object({
   profile: PolicyNameSchema.optional().default("PUBLIC_RELEASE"),
   outputType: OutputTypeEnum.optional().default("EXECUTIVE_SUMMARY"),
-  // Batch support — either single outputType or array
+
   outputTypes: z.array(OutputTypeEnum).min(1).max(8).optional(),
-  // Industry-grade generation controls
+
   tone: z.enum(["formal", "professional", "technical", "friendly", "persuasive", "neutral", "concise"]).optional().default("professional"),
   language: z.enum(["en", "es", "fr", "de", "ja", "zh", "hi", "pt"]).optional().default("en"),
   detailLevel: z.enum(["brief", "standard", "detailed", "comprehensive"]).optional().default("standard"),
@@ -79,6 +90,20 @@ export const BatchTransformSchema = z.object({
 export const PolicyCompareSchema = z.object({
   profiles: z.array(PolicyNameSchema).min(1).max(10).optional().default(["PUBLIC_RELEASE", "INTERNAL_SUMMARY", "SECURITY_INCIDENT"]),
   outputType: OutputTypeEnum.optional().default("EXECUTIVE_SUMMARY"),
+});
+
+/** Full auto pipeline: sanitize + transform + validate in one server-side run. */
+export const PipelineSchema = z.object({
+  policy: PolicyNameSchema.optional().default("PUBLIC_RELEASE"),
+  outputType: OutputTypeEnum.optional().default("EXECUTIVE_SUMMARY"),
+  outputTypes: z.array(OutputTypeEnum).min(1).max(8).optional(),
+  findingActions: FindingActionsSchema,
+  tone: z.enum(["formal", "professional", "technical", "friendly", "persuasive", "neutral", "concise"]).optional().default("professional"),
+  language: z.enum(["en", "es", "fr", "de", "ja", "zh", "hi", "pt"]).optional().default("en"),
+  detailLevel: z.enum(["brief", "standard", "detailed", "comprehensive"]).optional().default("standard"),
+  objective: z.enum(["inform", "summarize", "persuade", "educate", "announce", "report", "analyze", "comply"]).optional().default("inform"),
+  style: z.enum(["narrative", "bullet", "structured", "conversational", "formal", "executive", "creative"]).optional().default("structured"),
+  batchId: z.string().max(64).optional(),
 });
 
 export const IntelligenceExtractSchema = z.object({
@@ -124,6 +149,10 @@ export const PaginationSchema = z.object({
 });
 
 export const DocumentIdSchema = z.string().min(10).max(100).regex(/^[a-zA-Z0-9_-]+$/, "Invalid document id format");
+
+export const BulkDeleteSchema = z.object({
+  ids: z.array(DocumentIdSchema).min(1).max(100),
+});
 
 export function parseOr400<T>(schema: z.ZodSchema<T>, data: unknown): { ok: true; data: T } | { ok: false; error: string } {
   const r = schema.safeParse(data);

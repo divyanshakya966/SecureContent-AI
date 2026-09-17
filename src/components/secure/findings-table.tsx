@@ -127,4 +127,3 @@ export function FindingsTable({ findings, emptyHint = "No findings.", maxHeight 
   );
 }
 
-// local truncate deprecated — use safeTruncate from @/lib/text

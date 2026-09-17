@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Menu, ShieldCheck, Moon, Sun, Search, HelpCircle } from "lucide-react";
+import { Menu, Moon, Sun, Search, HelpCircle } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useApp, type ViewKey } from "@/lib/store";
+import { ROUTES, isDocumentsSection, viewFromPathname } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -30,7 +32,10 @@ const NAV: { key: ViewKey; label: string; icon: React.ComponentType<{ className?
 ];
 
 export function MobileNav() {
-  const { view, setView, setCommandOpen, setHelpOpen } = useApp();
+  const { setCommandOpen, setHelpOpen } = useApp();
+  const router = useRouter();
+  const pathname = usePathname();
+  const view = viewFromPathname(pathname);
   const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
 
@@ -43,9 +48,7 @@ export function MobileNav() {
       </SheetTrigger>
       <SheetContent side="left" className="w-[85vw] max-w-[320px] p-0 bg-sidebar text-sidebar-foreground border-sidebar-border flex flex-col">
         <SheetHeader className="flex flex-row items-center gap-2.5 px-4 h-[56px] border-b border-sidebar-border shrink-0">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
-            <ShieldCheck className="h-4 w-4" />
-          </div>
+          <img src="/logo.svg" alt="SecureContent AI" className="h-7 w-7 rounded-md shadow-sm" />
           <div className="leading-none text-left">
             <SheetTitle className="text-[13px] font-semibold tracking-tight text-sidebar-foreground">SecureContent AI</SheetTitle>
             <div className="text-[10px] font-medium tracking-wide text-sidebar-foreground/50">v1.0 · Local</div>
@@ -57,13 +60,13 @@ export function MobileNav() {
             Navigation
           </div>
           {NAV.map((item) => {
-            const active = view === item.key;
+            const active = view === item.key || (item.key === "documents" && isDocumentsSection(pathname) && view === "document");
             const Icon = item.icon;
             return (
               <button
                 key={item.key}
                 onClick={() => {
-                  setView(item.key);
+                  router.push(ROUTES[item.key]);
                   setOpen(false);
                 }}
                 className={cn(

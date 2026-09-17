@@ -1,6 +1,4 @@
-// Zero-Trust output sanitization — treat LLM output as untrusted (T5).
-// Strips unsafe HTML/Markdown that could be interpreted as instructions or lead to downstream injection.
-// This is a deterministic last-mile filter — not a replacement for DLP.
+// Last-mile output filter: treat LLM output as untrusted (T5). Not a replacement for DLP.
 
 const UNSAFE_HTML = /<(script|iframe|object|embed|form|meta|link|style|svg|math)[\s>]/gi;
 const UNSAFE_MD = /\[([^\]]+)\]\(javascript:[^)]+\)/gi;
@@ -19,7 +17,7 @@ export function sanitizeOutputHtml(content: string): OutputSanitizeResult {
   const removed: { type: string; count: number }[] = [];
   const warnings: string[] = [];
 
-  // Strip script/iframe/svg etc whole blocks
+
   const htmlRe = new RegExp(UNSAFE_HTML.source, "gi");
   const htmlMatches = out.match(htmlRe);
   if (htmlMatches) {
@@ -29,7 +27,7 @@ export function sanitizeOutputHtml(content: string): OutputSanitizeResult {
     out = out.replace(/<\/(script|iframe|object|embed|form|svg|math|style)>/gi, "&lt;/$1&gt;");
   }
 
-  // Strip javascript: URLs
+
   const jsMatches = out.match(UNSAFE_MD);
   if (jsMatches) {
     removed.push({ type: "javascript_url", count: jsMatches.length });
@@ -37,12 +35,12 @@ export function sanitizeOutputHtml(content: string): OutputSanitizeResult {
     out = out.replace(UNSAFE_MD, "[$1](#blocked)");
   }
 
-  // Validate markdown links: ensure they are not internal/RFC1918 that leaked
+  // Redact leaked internal/RFC1918 links.
   let linkWarnings = 0;
   out = out.replace(UNSAFE_URL_MD, (full, text, url) => {
     try {
       const raw = String(url).trim();
-      // Decode redirector wrappers (?url= / ?next= / ?redirect=) before judging.
+      // Unwrap redirector query params before judging.
       let candidate = raw;
       try {
         const parsed = new URL(raw);
@@ -54,7 +52,7 @@ export function sanitizeOutputHtml(content: string): OutputSanitizeResult {
           }
         }
       } catch {
-        // fall through — handled below
+
       }
       const decoded = (() => {
         try { return decodeURIComponent(candidate); } catch { return candidate; }
@@ -71,18 +69,34 @@ export function sanitizeOutputHtml(content: string): OutputSanitizeResult {
         return `[${text}](#internal-url-redacted)`;
       }
     } catch {
-      // malformed URL — keep as is, DLP will handle
+      // Keep malformed URLs; DLP handles them.
     }
     return full;
   });
 
-  // Strip event-handler attributes and data: URLs that bypass javascript: check
+  // Strip event handlers and data: URLs.
   const eventAttrRe = /\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi;
   const eventMatches = out.match(eventAttrRe);
   if (eventMatches) {
     removed.push({ type: "event_handler_attr", count: eventMatches.length });
     warnings.push(`Removed ${eventMatches.length} event-handler attribute(s) from generated output.`);
     out = out.replace(eventAttrRe, "");
+  }
+  // Strip dangerous URL schemes in raw HTML attributes (href/src/xlink:href/srcdoc etc.).
+  // Markdown javascript:/data: links are handled above; this covers <a href="javascript:...">.
+  const dangerousAttrRe = /\s(?:href|src|xlink:href|srcdoc|action|formaction)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi;
+  let dangerousCount = 0;
+  out = out.replace(dangerousAttrRe, (full) => {
+    const v = full.split("=").slice(1).join("=").trim().replace(/^["']|["']$/g, "").trim().toLowerCase();
+    if (/^(javascript|data|vbscript|file|blob):/.test(v)) {
+      dangerousCount++;
+      return "";
+    }
+    return full;
+  });
+  if (dangerousCount) {
+    removed.push({ type: "dangerous_url_attr", count: dangerousCount });
+    warnings.push(`Removed ${dangerousCount} dangerous URL attribute(s) from generated output.`);
   }
   const dataUrlRe = /\[([^\]]+)\]\(data:[^)]+\)/gi;
   const dataMatches = out.match(dataUrlRe);
@@ -96,14 +110,14 @@ export function sanitizeOutputHtml(content: string): OutputSanitizeResult {
     warnings.push(`Redacted ${linkWarnings} internal URL(s) in generated output.`);
   }
 
-  // Neutralize instruction-like role prefixes that survived sanitization
+
   if (/^\s*(system|assistant|user)\s*:/gim.test(out)) {
     warnings.push("Output contained role-like prefix — neutralized.");
     out = out.replace(/^\s*system\s*:/gim, "System (as data):");
     out = out.replace(/^\s*assistant\s*:/gim, "Assistant (as data):");
     out = out.replace(/^\s*user\s*:/gim, "User (as data):");
   }
-  // Strip HTML comments that could hide instructions
+
   const commentRe = /<!--[\s\S]*?-->/g;
   const commentMatches = out.match(commentRe);
   if (commentMatches) {
@@ -112,7 +126,7 @@ export function sanitizeOutputHtml(content: string): OutputSanitizeResult {
     out = out.replace(commentRe, "");
   }
 
-  // Strip control / zero-width / bidi / replacement chars (obscure boxes, smuggled directives)
+  // Strip control, zero-width, bidi, and replacement chars.
   const beforeCtrl = out.length;
   out = out.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u200B-\u200D\uFEFF\uFFFD\u202A-\u202E\u2066-\u2069\u00AD]/g, "");
   if (out.length !== beforeCtrl) {

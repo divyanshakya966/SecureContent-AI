@@ -19,12 +19,34 @@ services:
       GROQ_API_KEY: "${GROQ_API_KEY:-}"
       GEMINI_MODEL: "${GEMINI_MODEL:-gemini-2.0-flash}"
       GROQ_MODEL: "${GROQ_MODEL:-openai/gpt-oss-120b}"
+      API_AUTH_TOKEN: "${API_AUTH_TOKEN:-}"
+      REQUIRE_AUTH_FOR_READS: "${REQUIRE_AUTH_FOR_READS:-false}"
+      ALLOW_SEED: "${ALLOW_SEED:-false}"
+      ALLOW_OFFLINE_MOCK: "${ALLOW_OFFLINE_MOCK:-false}"
       # Legacy (deprecated):
       # Z_AI_API_KEY: "${Z_AI_API_KEY:-}"
       DOCLING_WORKER_URL: "http://docling:8001/parse"
     volumes:
       - db_data:/app/db
+    tmpfs:
+      - /tmp:noexec,nosuid,size=256m
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    read_only: true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          memory: 512M
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/v1/stats"]
       interval: 30s
@@ -33,20 +55,31 @@ services:
 
   # Reverse-proxy on :81 — hardens headers + forwards x-real-ip. Optional.
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.10-alpine
     ports:
       - "81:81"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       app:
         condition: service_healthy
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:81/api/v1/stats"]
       interval: 30s
       timeout: 5s
       retries: 3
-    restart: unless-stopped
 
   # Optional Python Docling worker — only started with --profile docling
   docling:
@@ -54,11 +87,21 @@ services:
       context: ./mini-services/docling-worker
       dockerfile: Dockerfile
     profiles: ["docling"]
-    ports:
-      - "8001:8001"
     environment:
       PYTHONUNBUFFERED: "1"
+    tmpfs:
+      - /tmp:noexec,nosuid,size=512m
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health').read()"]
       interval: 30s
@@ -67,3 +110,5 @@ services:
 
 volumes:
   db_data:
+  caddy_data:
+  caddy_config:

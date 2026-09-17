@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   FileStack, ShieldAlert, KeyRound, CheckCircle2, ArrowDownRight, Brain, Globe, Crosshair,
   Inbox, BarChart3, PieChart as PieIcon, Clock3, Layers,
@@ -100,7 +101,8 @@ function EmptyPlaceholder({
 }
 
 export function DashboardView() {
-  const { refreshKey, setView } = useApp();
+  const { refreshKey } = useApp();
+  const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -136,7 +138,7 @@ export function DashboardView() {
     return (
       <Card className="p-8 text-center">
         <p className="text-sm text-muted-foreground">Could not load stats: {error}</p>
-        <Button className="mt-3" onClick={() => setView("upload")}>Ingest document</Button>
+        <Button className="mt-3" onClick={() => router.push("/ingest")}>Ingest document</Button>
       </Card>
     );
   }
@@ -158,7 +160,7 @@ export function DashboardView() {
               </p>
             </div>
           </div>
-          <Button onClick={() => setView("upload")} size="sm" className="shrink-0">
+          <Button onClick={() => router.push("/ingest")} size="sm" className="shrink-0">
             Ingest document
           </Button>
         </Card>
@@ -234,7 +236,7 @@ export function DashboardView() {
           <div className="mt-2 text-sm font-semibold tracking-tight">Scan → Sanitize → Validate</div>
           <div className="mt-1 text-xs text-muted-foreground">Double-gate · Policy-aware</div>
           <div className="mt-3 flex items-center gap-1.5 text-[11px] font-medium">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Operational
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--risk-safe)]" /> Operational
           </div>
         </Card>
       </div>
@@ -258,7 +260,7 @@ export function DashboardView() {
                 title="No analysis yet"
                 description="Ingest a document to generate before/after risk comparison. Risk is computed from findings and reduced via policy."
                 actionLabel={empty ? "Ingest document" : undefined}
-                onAction={empty ? () => setView("upload") : undefined}
+                onAction={empty ? () => router.push("/ingest") : undefined}
               />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -266,7 +268,9 @@ export function DashboardView() {
                   <XAxis dataKey="label" tick={{ fontSize: 10, fontFamily: "var(--font-mono)", fill: "var(--muted-foreground)" }} interval={0} axisLine={false} tickLine={false} />
                   <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} width={36} tickMargin={6} tickCount={6} />
                   <Tooltip
-                    contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12, boxShadow: "0 4px 12px oklch(0 0 0 / 0.08)" }}
+                    contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12, boxShadow: "0 4px 12px oklch(0 0 0 / 0.08)", color: "var(--foreground)" }}
+                    itemStyle={{ color: "var(--foreground)" }}
+                    labelStyle={{ color: "var(--muted-foreground)" }}
                     cursor={{ fill: "var(--muted)", opacity: 0.12 }}
                     formatter={(value: any, name: any) => [value, String(name).toLowerCase() === "before" ? "Before" : "After"]}
                     labelFormatter={(_label, payload) => (payload?.[0]?.payload as any)?.title ?? _label}
@@ -300,7 +304,7 @@ export function DashboardView() {
                   <Pie data={stats.findingsByCategory} dataKey="count" nameKey="category" innerRadius={52} outerRadius={82} paddingAngle={3} stroke="var(--card)" strokeWidth={2}>
                     {stats.findingsByCategory.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Pie>
-                  <Tooltip contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12 }} />
+                  <Tooltip contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12, color: "var(--foreground)" }} itemStyle={{ color: "var(--foreground)" }} labelStyle={{ color: "var(--muted-foreground)" }} />
                   <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="circle" />
                 </PieChart>
               </ResponsiveContainer>
@@ -313,7 +317,7 @@ export function DashboardView() {
         <Card className="p-5 lg:col-span-2">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold tracking-tight">Recent activity</h3>
-            <Button variant="ghost" size="sm" onClick={() => setView("audit")} className="h-7 text-xs rounded-md">View audit →</Button>
+            <Button variant="ghost" size="sm" onClick={() => router.push("/audit")} className="h-7 text-xs rounded-md">View audit →</Button>
           </div>
           <div className="mt-3 max-h-[288px] overflow-y-auto scroll-thin pr-1">
             {stats.recentActivity.length === 0 ? (
@@ -322,7 +326,7 @@ export function DashboardView() {
                 title="No pipeline activity"
                 description="Ingest a document to populate this trail. Scan, sanitize, and transformation events appear here."
                 actionLabel="Go to ingest"
-                onAction={() => setView("upload")}
+                onAction={() => router.push("/ingest")}
               />
             ) : (
               <ol className="space-y-2">

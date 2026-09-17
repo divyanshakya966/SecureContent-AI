@@ -7,6 +7,9 @@ on:
   schedule:
     - cron: "0 6 * * 1" # weekly Monday 06:00 UTC
 
+permissions:
+  contents: read
+
 jobs:
   secrets-and-deps:
     runs-on: ubuntu-latest
@@ -23,11 +26,19 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install deps
+      - name: Install deps (locked)
         run: bun install --frozen-lockfile
 
-      - name: Audit (bun)
+      - name: Audit (bun) — report only; criticals tracked as issues
         run: bun audit || true
+
+      - name: Fail on critical vulnerabilities
+        run: |
+          if bun audit 2>&1 | grep -qiE "^\s*critical:"; then
+            echo "::error::Critical vulnerabilities found — run 'bun audit' locally and upgrade."
+            exit 1
+          fi
+          echo "No critical vulnerabilities."
 
       - name: Gitleaks — secret scan (synthetic allowlist for benchmark)
         uses: gitleaks/gitleaks-action@v3
@@ -35,7 +46,6 @@ jobs:
           config-path: .gitleaks.toml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: false
 
       - name: Semgrep — SAST (OWASP + JS/TS rules)
         uses: semgrep/semgrep-action@v1
@@ -45,7 +55,8 @@ jobs:
             p/javascript
             p/typescript
             p/secrets
-        continue-on-error: true
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
       - name: Prisma validate
         run: bunx prisma validate
@@ -55,10 +66,38 @@ jobs:
       - name: ESLint security rules (already in eslint config)
         run: bun run lint
 
+      - name: No NEXT_PUBLIC secrets
+        run: |
+          if grep -rn "NEXT_PUBLIC_.*KEY\|NEXT_PUBLIC_.*SECRET\|NEXT_PUBLIC_.*TOKEN" src --include="*.ts" --include="*.tsx" | grep -v "API token" | head -n 5; then
+            echo "::error::Potential NEXT_PUBLIC secret exposure in src/."
+            exit 1
+          fi
+          echo "No NEXT_PUBLIC secrets in src/."
+
   docker:
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
     steps:
       - uses: actions/checkout@v6
       - name: Build Docker image (smoke test)
         run: docker build -t securecontent-ai:test .
+
+      - name: Trivy — container + fs scan (fail on CRITICAL)
+        uses: aquasecurity/trivy-action@0.32.0
+        with:
+          image-ref: securecontent-ai:test
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif

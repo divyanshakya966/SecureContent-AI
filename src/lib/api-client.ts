@@ -1,4 +1,4 @@
-// Frontend API client — typed fetch helpers for the /api/v1 surface.
+
 
 import type {
   DocumentRecord,
@@ -15,6 +15,9 @@ import type {
   PolicyCompareResult,
   FindingActionOverride,
   ScanConfig,
+  PipelineEvent,
+  PipelineDone,
+  BulkIngestResult,
   GenerationTone,
   GenerationLanguage,
   DetailLevel,
@@ -31,6 +34,46 @@ export interface TransformParams {
   detailLevel?: DetailLevel;
   objective?: CommunicationObjective;
   style?: ContentStyle;
+}
+
+const API_TOKEN_KEY = "sc-api-token";
+
+export function getApiToken(): string | null {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    return localStorage.getItem(API_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setApiToken(token: string | null): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    if (!token) localStorage.removeItem(API_TOKEN_KEY);
+    else localStorage.setItem(API_TOKEN_KEY, token.trim());
+  } catch {
+    // ignore (private mode)
+  }
+}
+
+function withAuthHeader(headers?: HeadersInit): HeadersInit | undefined {
+  const token = getApiToken();
+  if (!token) return headers;
+  if (headers instanceof Headers) {
+    if (!headers.has("authorization")) headers.set("authorization", `Bearer ${token}`);
+    return headers;
+  }
+  if (Array.isArray(headers)) {
+    if (!headers.some(([k]) => k.toLowerCase() === "authorization")) {
+      return [...headers, ["authorization", `Bearer ${token}`] as [string, string]];
+    }
+    return headers;
+  }
+  const h = { ...(headers as Record<string, string> | undefined) };
+  const hasAuth = Object.keys(h).some((k) => k.toLowerCase() === "authorization");
+  if (!hasAuth) h["Authorization"] = `Bearer ${token}`;
+  return h;
 }
 
 async function json<T>(res: Response): Promise<T> {
@@ -52,11 +95,10 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(input, { ...init, signal: controller.signal });
+    const res = await fetch(input, { ...init, signal: controller.signal, headers: withAuthHeader(init.headers) });
     return res;
   } catch (e: any) {
-    // fetch throws DOMException AbortError on timeout — surface a clear message
-    // so the UI can distinguish "client gave up" from "server failed".
+    // Surface timeouts distinctly from server failures.
     if (e?.name === "AbortError" || controller.signal.aborted) {
       throw new Error(
         `Request timed out after ${Math.round(timeoutMs / 1000)}s — the server may still be processing. Reload to check.`
@@ -109,6 +151,15 @@ export const api = {
     await json<{ ok: boolean }>(r);
   },
 
+  async bulkDeleteDocuments(ids: string[]): Promise<{ deleted: number; ids: string[] }> {
+    const r = await fetchWithTimeout("/api/v1/documents/bulk-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    return json<{ deleted: number; ids: string[] }>(r);
+  },
+
   async scanDocument(id: string, config?: ScanConfig): Promise<DocumentRecord> {
     const r = await fetchWithTimeout(`/api/v1/documents/${id}/scan`, {
       method: "POST",
@@ -133,8 +184,7 @@ export const api = {
     outputType: OutputType,
     params?: Omit<TransformParams, "profile" | "outputType">
   ) {
-    // LLM chain (Gemini → Groq) routinely takes 14–25s; the old 15s default
-    // aborted just as the server succeeded (POST 200 in 15.0s) → false "failed" popup.
+    // LLM chains run long; give transforms a generous budget.
     const r = await fetchWithTimeout(`/api/v1/documents/${id}/transform`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -159,7 +209,7 @@ export const api = {
     id: string,
     params: { profile?: TransformationProfile; outputTypes: OutputType[] } & Omit<TransformParams, "outputType" | "outputTypes">
   ) {
-    // Backwards compat — batch is now handled by the main transform endpoint via outputTypes[]
+    // Batch goes through the main transform endpoint.
     const r = await fetchWithTimeout(`/api/v1/documents/${id}/transform`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -214,6 +264,90 @@ export const api = {
   async deletePolicy(name: string): Promise<void> {
     const r = await fetchWithTimeout(`/api/v1/policies/${encodeURIComponent(name)}`, { method: "DELETE" });
     await json<{ ok: boolean }>(r);
+  },
+
+  /**
+   * Bulk ingest: many files in one server-orchestrated request, optionally
+   * with the auto pipeline per document. No client timeout (batches run long);
+   * pass an AbortSignal to cancel (server keeps finished files).
+   */
+  async ingestBatch(form: FormData, signal?: AbortSignal): Promise<BulkIngestResult> {
+    const r = await fetch("/api/v1/documents/batch", { method: "POST", body: form, signal, headers: withAuthHeader() as HeadersInit });
+    return json<BulkIngestResult>(r);
+  },
+
+  /**
+   * Full auto pipeline: sanitize → transform → validate in one server-side run.
+   * Streams Server-Sent Events; `onEvent` receives `{ event, ...payload }` for
+   * sanitize/transform progress. Resolves with the terminal `done` payload
+   * (or rejects on `blocked` / `error` events and HTTP failures). No client
+   * timeout — the server heartbeats long LLM batches; callers may pass an
+   * AbortSignal to cancel (server-side work already persisted is kept).
+   */
+  async runPipeline(
+    id: string,
+    params: {
+      policy?: string;
+      outputType?: OutputType;
+      outputTypes?: OutputType[];
+      findingActions?: FindingActionOverride[];
+    } & Omit<TransformParams, "profile" | "outputType" | "outputTypes">,
+    onEvent?: (msg: PipelineEvent) => void,
+    signal?: AbortSignal
+  ): Promise<PipelineDone> {
+    const r = await fetch(`/api/v1/documents/${id}/pipeline`, {
+      method: "POST",
+      headers: withAuthHeader({ "Content-Type": "application/json" }) as HeadersInit,
+      body: JSON.stringify(params),
+      signal,
+    });
+    // The 200 body is an event stream, not JSON — only errors carry `{ error }`.
+    if (!r.ok) {
+      const txt = await r.text().catch(() => "");
+      let msg = `Request failed (${r.status})`;
+      try {
+        const parsed = JSON.parse(txt);
+        msg = (parsed as { error?: string }).error || msg;
+      } catch {
+        if (txt) msg = txt.slice(0, 300);
+      }
+      throw new Error(msg);
+    }
+    if (!r.body) throw new Error("Streaming not supported in this browser.");
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let terminal: PipelineDone | null = null;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+      for (const part of parts) {
+        for (const line of part.split("\n")) {
+          if (!line.startsWith("data:")) continue;
+          let msg: PipelineEvent;
+          try {
+            msg = JSON.parse(line.slice(5).trim()) as PipelineEvent;
+          } catch {
+            continue; // malformed frame — skip
+          }
+          onEvent?.(msg);
+          if (msg.event === "done") {
+            terminal = msg as PipelineDone;
+          } else if (msg.event === "blocked") {
+            throw new Error(msg.blockReason ?? "Policy blocked transformation.");
+          } else if (msg.event === "error") {
+            throw new Error(msg.error ?? "Pipeline failed.");
+          }
+        }
+      }
+      if (terminal) break;
+    }
+    try { await reader.cancel(); } catch { /* already closed */ }
+    if (!terminal) throw new Error("Pipeline stream ended without a result — reload to check progress.");
+    return terminal;
   },
 
   async getSamples(): Promise<SampleDocument[]> {

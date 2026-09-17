@@ -1,6 +1,12 @@
 # SecureContent AI — Caddy reverse proxy
 # Hardened: fixed upstream (app:3000 in compose, localhost:3000 for bare-metal).
 # Security headers are emitted both here and in Next.js (defense in depth).
+#
+# Production TLS (recommended on cloud VMs):
+#   Replace `:81` with your domain, e.g. `secure.example.com { ... }`,
+#   and Caddy will issue/renew Let's Encrypt certs automatically.
+#   Keep HSTS + CSP below; terminate TLS at Caddy, never expose :3000 publicly
+#   (bind app to 127.0.0.1 or keep it on the internal docker network only).
 
 :81 {
 	header {
@@ -9,6 +15,10 @@
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		X-Permitted-Cross-Domain-Policies "none"
+		Origin-Agent-Cluster "?1"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
 		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 	}
 

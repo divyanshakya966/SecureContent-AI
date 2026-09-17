@@ -1,5 +1,4 @@
-// SecureContent AI — security engine public surface
-// Single entry point used by the API layer.
+// Security engine public surface.
 
 export { scanContent, detectOutputLeakage } from "./detectors";
 export type { RawFinding } from "./detectors";

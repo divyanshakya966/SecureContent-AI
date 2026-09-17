@@ -1,7 +1,4 @@
-// Secure Intelligence — Intelligence-Aware Extraction
-// Extracts entities, IOCs, TTPs, risks, key findings, evidence from untrusted content.
-// All extraction is heuristic + regex based (no heavy ML) so it stays lightweight for local use.
-// When an LLM is available, key findings are refined via the grounded transform layer.
+// Heuristic extraction of entities, IOCs, TTPs, risks, and key findings.
 
 import type {
   Classification,
@@ -16,9 +13,6 @@ import type {
 } from "@/types";
 import type { RawFinding } from "@/lib/security/detectors";
 
-// ---------------------------------------------------------------------------
-// Entity extraction
-// ---------------------------------------------------------------------------
 
 const ENTITY_PATTERNS: { type: ExtractedEntity["type"]; re: RegExp; confidence: number }[] = [
   { type: "EMAIL", re: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, confidence: 0.97 },
@@ -61,7 +55,7 @@ function extractEntities(text: string): ExtractedEntity[] {
     }
   }
 
-  // Person/Org heuristics
+
   for (const m of text.matchAll(PERSON_ORG_RE)) {
     const val = m[1];
     if (!val) continue;
@@ -89,9 +83,6 @@ function extractEntities(text: string): ExtractedEntity[] {
   return entities.slice(0, 25);
 }
 
-// ---------------------------------------------------------------------------
-// IOC extraction
-// ---------------------------------------------------------------------------
 
 const IOC_PATTERNS: { type: IOC["type"]; re: RegExp; severity: Severity; confidence: number }[] = [
   { type: "IP", re: /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/g, severity: "MEDIUM", confidence: 0.88 },
@@ -113,7 +104,7 @@ function extractIOCs(text: string): IOC[] {
       const val = m[0];
       const key = `${type}:${val}`;
       if (seen.has(key)) continue;
-      // Skip email-like domains that are already PII — only keep if not an email local part
+      // Skip email domains (already PII).
       if (type === "DOMAIN" && text.slice(Math.max(0, (m.index ?? 0) - 30), m.index).includes("@")) continue;
       seen.add(key);
       iocs.push({
@@ -129,9 +120,6 @@ function extractIOCs(text: string): IOC[] {
   return iocs.slice(0, 20);
 }
 
-// ---------------------------------------------------------------------------
-// TTP extraction (MITRE ATT&CK heuristic)
-// ---------------------------------------------------------------------------
 
 interface TTPDef { keywords: string[]; tactic: TacticType; technique: string; mitreId: string; severity: Severity }
 
@@ -178,9 +166,6 @@ function extractTTPs(text: string): TTP[] {
   return ttps.slice(0, 12);
 }
 
-// ---------------------------------------------------------------------------
-// Risk synthesis
-// ---------------------------------------------------------------------------
 
 function synthesizeRisks(text: string, findings: RawFinding[], entities: ExtractedEntity[], iocs: IOC[], ttps: TTP[]): IntelRisk[] {
   const risks: IntelRisk[] = [];
@@ -214,13 +199,10 @@ function synthesizeRisks(text: string, findings: RawFinding[], entities: Extract
     risks.push({ category: "Operational Learning", severity: "LOW", description: "Postmortem/timeline content present — ensure follow-ups tracked and not leaked to public audiences.", score: 5 });
   }
 
-  // Deduplicate and cap
+
   return risks.slice(0, 6);
 }
 
-// ---------------------------------------------------------------------------
-// Key findings & evidence
-// ---------------------------------------------------------------------------
 
 function extractKeyFindings(text: string): KeyFinding[] {
   const sentences = text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length > 20);
@@ -246,9 +228,6 @@ function extractKeyFindings(text: string): KeyFinding[] {
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Public: build intelligence report
-// ---------------------------------------------------------------------------
 
 export interface IntelligenceInput {
   documentId: string;

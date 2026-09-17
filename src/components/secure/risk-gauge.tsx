@@ -23,8 +23,7 @@ export function RiskGauge({ value, before, size = 132, label }: RiskGaugeProps) 
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const clamped = Math.min(100, Math.max(0, animated));
-  // Keep a visible nub for tiny non-zero risk so the ring never looks broken;
-  // a true 0 stays empty (track only) which reads as "clean".
+  // Tiny non-zero risks keep a visible nub; true 0 stays empty.
   const visiblePct = clamped === 0 ? 0 : Math.max(clamped, 4) / 100;
   const color = riskColor(value);
   const valueFontSize = Math.round(size * 0.3);
@@ -69,7 +68,7 @@ export function RiskGauge({ value, before, size = 132, label }: RiskGaugeProps) 
         </div>
       </div>
       {hasDelta && (
-        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums ${delta >= 0 ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "border-[var(--risk-critical)]/25 bg-[var(--risk-critical)]/10 text-[var(--risk-critical)]"}`}>
+        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-medium tabular-nums ${delta >= 0 ? "border-[var(--risk-safe)]/25 bg-[var(--risk-safe)]/10 text-[var(--risk-safe)]" : "border-[var(--risk-critical)]/25 bg-[var(--risk-critical)]/10 text-[var(--risk-critical)]"}`}>
           {delta >= 0 ? "↓" : "↑"} {Math.abs(delta)} from {before}
         </span>
       )}

@@ -1,4 +1,4 @@
-// Display helpers for the SecureContent AI UI.
+
 
 import type {
   Classification,

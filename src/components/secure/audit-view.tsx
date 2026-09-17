@@ -8,12 +8,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/secure/badges";
 import { formatRelativeTime } from "@/lib/display";
+import { useRouter } from "next/navigation";
 import { useApp } from "@/lib/store";
+import { documentPath } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 import { Search, Terminal, Clock3 } from "lucide-react";
 
 const ACTION_TONE: Record<string, string> = {
   UPLOAD: "bg-muted text-muted-foreground border-border",
+  DELETE: "bg-[var(--risk-critical)]/10 text-[var(--risk-critical)] border-[var(--risk-critical)]/30",
+  BULK_DELETE: "bg-[var(--risk-critical)]/10 text-[var(--risk-critical)] border-[var(--risk-critical)]/30",
+  BULK_INGEST: "bg-primary/10 text-primary border-primary/30",
   SCAN: "bg-[var(--chart-4)]/10 text-[var(--chart-4)] border-[var(--chart-4)]/30",
   POLICY_APPLY: "bg-[var(--risk-low)]/10 text-[var(--risk-low)] border-[var(--risk-low)]/30",
   POLICY_CREATE: "bg-[var(--risk-safe)]/10 text-[var(--risk-safe)] border-[var(--risk-safe)]/30",
@@ -28,7 +33,9 @@ const ACTION_TONE: Record<string, string> = {
 };
 
 export function AuditView() {
-  const { refreshKey, openDocument } = useApp();
+  const { refreshKey } = useApp();
+  const router = useRouter();
+  const openDocument = (id: string) => router.push(documentPath(id));
   const [audit, setAudit] = useState<AuditLogEntry[] | null>(null);
   const [query, setQuery] = useState("");
 

@@ -1,5 +1,4 @@
-// SecureContent AI — shared domain types
-// Consumed by both the API layer and the client UI.
+// Shared domain types for the API layer and client UI.
 
 export type Classification = "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED" | "UNCLASSIFIED";
 
@@ -217,7 +216,6 @@ export interface TransformationRecord {
   leakageCount: number;
   citations: Citation[];
   createdAt: string;
-  // Generation controls (industry-grade configurable pipeline)
   tone?: GenerationTone;
   language?: GenerationLanguage;
   detailLevel?: DetailLevel;
@@ -261,6 +259,100 @@ export interface FindingActionOverride {
   action: SanitizeAction;
 }
 
+/** Server-Sent Events emitted by the auto pipeline (`POST /documents/:id/pipeline`). */
+export type PipelineEventName =
+  | "sanitize-start"
+  | "sanitize-done"
+  | "transform-start"
+  | "transform-done"
+  | "transform-error"
+  | "done"
+  | "blocked"
+  | "error";
+
+export interface PipelineEvent {
+  event: PipelineEventName;
+  policy?: string;
+  actions?: number;
+  residualRisk?: number;
+  overridden?: number;
+  index?: number;
+  total?: number;
+  outputType?: OutputType;
+  model?: string;
+  outputDlp?: ValidationStatus;
+  grounding?: ValidationStatus;
+  leakageCount?: number;
+  error?: string;
+  blockReason?: string;
+}
+
+export interface PipelineDone extends PipelineEvent {
+  event: "done";
+  document: DocumentRecord | null;
+  transformations: TransformationRecord[];
+  residualRisk: number;
+  batchId: string | null;
+  errors: { outputType: OutputType; error: string }[];
+  dlpReasons: string[];
+}
+
+
+export type BulkItemStatus =
+  | "pending"
+  | "uploading"
+  | "ingested"
+  | "pipelined"
+  | "skipped"
+  | "blocked"
+  | "pipeline-failed"
+  | "failed"
+  | "cancelled";
+
+export interface BulkIngestResultItem {
+  filename: string;
+  status: Exclude<BulkItemStatus, "pending" | "uploading">;
+  documentId?: string;
+  title?: string;
+  risk?: number;
+  classification?: Classification;
+  transformations?: number;
+  transformationErrors?: { outputType: OutputType; error: string }[];
+  error?: string;
+}
+
+export interface BulkIngestSummary {
+  total: number;
+  ingested: number;
+  pipelined: number;
+  skipped: number;
+  blocked: number;
+  failed: number;
+  cancelled: number;
+}
+
+export interface BulkIngestResult {
+  batchId: string;
+  policy: string;
+  runPipeline: boolean;
+  results: BulkIngestResultItem[];
+  summary: BulkIngestSummary;
+}
+
+export interface BulkIngestOptions {
+  policy?: string;
+  outputTypes?: OutputType[];
+  runPipeline?: boolean;
+  skipDuplicates?: boolean;
+  stopOnError?: boolean;
+  concurrency?: number;
+  tone?: GenerationTone;
+  language?: GenerationLanguage;
+  detailLevel?: DetailLevel;
+  objective?: CommunicationObjective;
+  style?: ContentStyle;
+}
+
 /** Which detector families run during a scan. Output DLP always runs the full set. */
 export interface ScanConfig {
   pii: boolean;
@@ -281,9 +373,7 @@ export const DEFAULT_SCAN_CONFIG: ScanConfig = {
   minConfidence: 0,
 };
 
-// ---------------------------------------------------------------------------
-// Policy-Aware Transformation (signature innovation #1)
-// ---------------------------------------------------------------------------
+// Policy-aware transformation.
 
 export type AudienceKey = "PUBLIC" | "INTERNAL" | "EXECUTIVE" | "HR" | "SECURITY" | "CUSTOM";
 
@@ -307,9 +397,7 @@ export interface PolicyCompareResult {
   generatedAt: string;
 }
 
-// ---------------------------------------------------------------------------
-// Intelligence-Aware Extraction (signature innovation #2)
-// ---------------------------------------------------------------------------
+// Intelligence-aware extraction.
 
 export type EntityType = "PERSON" | "ORG" | "LOCATION" | "EMAIL" | "PHONE" | "DATE" | "IP" | "URL" | "ID" | "MISC";
 export type IOCType = "IP" | "DOMAIN" | "URL" | "HASH_MD5" | "HASH_SHA1" | "HASH_SHA256" | "CVE" | "EMAIL" | "PHONE";
@@ -371,7 +459,7 @@ export interface IntelligenceReport {
   classification: Classification;
   model: string;
   createdAt: string;
-  // counts for dashboard
+
   counts: {
     entities: number;
     iocs: number;
@@ -381,9 +469,7 @@ export interface IntelligenceReport {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Zero-Trust Pipeline (signature innovation #3) — validation types
-// ---------------------------------------------------------------------------
+// Zero-trust pipeline validation types.
 
 export type TrustBoundary = "T1_BROWSER_BACKEND" | "T2_BACKEND_PARSER" | "T3_SANITIZED_LLM" | "T4_RAG_LLM" | "T5_LLM_VALIDATOR" | "T6_BACKEND_STORAGE" | "T7_BACKEND_PROVIDER";
 
@@ -434,7 +520,7 @@ export interface DashboardStats {
   documentsByClassification: { classification: string; count: number }[];
   riskTrend: { label: string; title: string; before: number; after: number }[];
   recentActivity: AuditLogEntry[];
-  // Intelligence stats (signature innovation #2)
+
   totalIntelligenceReports?: number;
   totalEntities?: number;
   totalIOCs?: number;

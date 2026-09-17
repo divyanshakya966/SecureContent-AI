@@ -1,18 +1,6 @@
-// SecureContent AI — Sanitization engine
-// Applies policy-driven actions to the document: MASK, REDACT, REPLACE,
-// QUARANTINE, BLOCK. Produces a sanitized working copy that is sent to the
-// GenAI transformation layer instead of the raw content.
-//
-// Design intent (per blueprint):
-//   - Prompt-injection spans are always QUARANTINED — the text is removed from
-//     the working copy and the model is told to treat document content as data,
-//     never instructions. The document is still transformable.
-//   - Secrets/PII in the "block" bucket are REDACTED (force-removed) rather
-//     than blocking the whole document, because the span can always be safely
-//     removed.
-//   - Document-level BLOCK only triggers when, after sanitization, almost no
-//     usable content remains — i.e. the source was effectively a credential /
-//     injection dump with nothing to transform.
+// Policy-driven sanitization: MASK, REDACT, REPLACE, QUARANTINE, BLOCK.
+// Injections are always quarantined; blocked secrets are force-removed;
+// the whole document is refused only when no usable prose remains.
 
 import type { PolicyRule, SanitizeAction } from "@/types";
 import type { RawFinding } from "./detectors";
@@ -44,14 +32,13 @@ export function overrideKeyForFinding(f: Pick<RawFinding, "start" | "end" | "typ
   return `char_offset:${f.start}-${f.end}|${f.type}`;
 }
 
-// Map a finding to the action the policy wants applied.
+
 function bucketForFinding(
   finding: RawFinding,
   policy: PolicyRule,
   overrides?: FindingOverrides
 ): SanitizeAction {
-  // Reviewer override wins over buckets — except it can never weaken the two
-  // hard invariants below.
+  // Reviewer overrides win, but never weaken the invariants below.
   if (overrides) {
     const key = overrideKeyForFinding(finding);
     const chosen = overrides.get(key);
@@ -67,17 +54,16 @@ function bucketForFinding(
     }
   }
 
-  // Prompt-injection spans are ALWAYS quarantined, regardless of bucket.
+
   if (finding.category === "PROMPT_INJECTION") return "QUARANTINE";
 
-  // Explicit allow-list wins: listed types/categories pass through untouched.
+
   if (policy.allow.includes(finding.type) || policy.allow.includes(finding.category)) {
     return "ALLOW";
   }
 
   if (policy.block.includes(finding.type) || policy.block.includes(finding.category)) {
-    // Force-remove the span. The document can still be transformed; the
-    // secret simply must not survive into the working copy.
+    // Force-remove the span; the document stays transformable.
     return "REDACT";
   }
   if (policy.remove.includes(finding.type) || policy.remove.includes(finding.category)) {
@@ -95,7 +81,7 @@ export function sanitizeContent(
   policy: PolicyRule,
   overrides?: FindingOverrides
 ): SanitizeOutput {
-  // Process findings from the END of the string backwards so offsets stay valid.
+  // Backwards so offsets stay valid.
   const sorted = [...findings].sort((a, b) => b.start - a.start);
   let out = content;
   const actions: SanitizeActionRecord[] = [];
@@ -103,13 +89,12 @@ export function sanitizeContent(
   for (const f of sorted) {
     const action = bucketForFinding(f, policy, overrides);
     const overridden = overrides?.has(overrideKeyForFinding(f)) === true && action !== bucketForFinding(f, policy);
-    // ALLOW = pass through untouched (policy explicitly permits this type).
+
     if (action === "ALLOW") {
       actions.push({ finding: f, action, reason: `Allowed under policy "${policy.name}" — ${f.reason}`, overridden });
       continue;
     }
-    // Guard against stale/invalid offsets (e.g. persisted 0-0 spans): skip
-    // instead of corrupting the working copy by inserting at position 0.
+    // Skip stale offsets instead of corrupting the working copy.
     if (!Number.isFinite(f.start) || !Number.isFinite(f.end) || f.start < 0 || f.end <= f.start || f.end > out.length + 4096) {
       continue;
     }
@@ -152,12 +137,8 @@ export function sanitizeContent(
 
   actions.reverse();
 
-  // Document-level BLOCK: refuse transformation only if, after sanitization,
-  // almost no usable prose remains (source was effectively a sensitive dump).
-  // Use a conservative word-aware heuristic. Masked PII like "ra***@example.org"
-  // counts as usable (not stripped), so short legitimate sentences are preserved.
-  // Injection-only docs are never blocked — they are always quarantined and
-  // treated as data.
+  // Refuse transformation only when almost no usable prose remains.
+  // Masked PII counts as usable; injection-only docs are never blocked.
   const usable = out.replace(/\[([A-Z_ ]+)\]/g, "").replace(/\s+/g, " ").trim();
   const usableWords = usable.split(/\s+/).filter(Boolean).length;
   const allInjection = findings.length > 0 && findings.every((f) => f.category === "PROMPT_INJECTION");

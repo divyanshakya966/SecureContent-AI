@@ -2,12 +2,20 @@
 
 Base: `http://localhost:3000/api/v1` — JSON, `{ error }` on failure. All mutation responses include `x-request-id` / `x-correlation-id` and rate-limit headers.
 
+## Auth
+
+Open by default (local/dev). When the server sets `API_AUTH_TOKEN` (≥16 chars), every
+`POST/PUT/DELETE` requires `Authorization: Bearer <token>` (`401` otherwise); set
+`REQUIRE_AUTH_FOR_READS=true` to lock `GET`s too. The web UI sends the browser-stored
+token (topbar → key icon). `POST /seed` additionally requires `ALLOW_SEED=true` in production.
+
 ## Documents
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/documents` | List (filter `?status=` `?take=` `?skip=`) |
 | `POST` | `/documents` | Ingest: `file` (multipart) \| `{ sampleId }` \| `{ title, content }` → `201 { document }` |
+| `POST` | `/documents/bulk-delete` | Delete up to 100: `{ ids[] }` → `{ deleted, ids }` (unknown ids ignored; findings/transformations cascade) |
 | `GET` | `/documents/:id` | Get with findings, transformations, intelligence |
 | `DELETE` | `/documents/:id` | Delete with cascade |
 | `POST` | `/documents/:id/scan` | Re-scan rawContent, optional `{ config }` (detector families + `minConfidence`) → `{ document }` |
@@ -18,6 +26,8 @@ Base: `http://localhost:3000/api/v1` — JSON, `{ error }` on failure. All mutat
 | `GET` | `/documents/:id/intelligence` | Intelligence (cached) |
 | `POST` | `/documents/:id/intelligence` | Intelligence (force refresh) |
 | `POST` | `/documents/:id/policy-compare` | `{ profiles[] (1..10, built-ins + custom policies), outputType }` → compare sanitization across audiences |
+| `POST` | `/documents/:id/pipeline` | Full auto pipeline (SSE stream): `{ policy, outputType | outputTypes[] (1..8), findingActions[]?, tone, language, detailLevel, objective, style }` → `sanitize-start/done`, `transform-start/done` per artefact, terminal `done` (or `blocked`/`error`) |
+| `POST` | `/documents/batch` | Bulk ingest (multipart `files[]`, 1–20 files, 100 MB total): `{ policy, outputTypes?, runPipeline?, skipDuplicates?, stopOnError?, concurrency? (1–5), tone, language, detailLevel, objective, style }` → `{ batchId, results[] (per-file status/outputs/errors), summary }`; pipelines run per file, one bad file never sinks the batch |
 
 **Generation parameters** (all optional, backward-compatible defaults in parentheses):
 

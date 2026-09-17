@@ -32,13 +32,14 @@ The platform is an **intelligent content transformation engine**: it analyses th
 | Output DLP | `src/lib/security/output-dlp.ts` + `outputSanitizer.ts` | HTML/JS sanitize, DLP rescan, auto-repair |
 | Intelligence | `src/lib/intelligence/` | Entity/IOC/TTP/Risk extraction, MITRE ATT&CK |
 | Storage | `prisma/schema.prisma` | SQLite (dev/Docker) or Postgres (cloud): Document, Finding, Transformation (with tone/language/detail/objective/style/batchId), AuditLog, Policy, IntelligenceReport |
-| Frontend | `src/app/page.tsx`, `components/secure/` | Dashboard, ingest, documents, transform studio (configurable), policy studio (custom CRUD + templates), policy lab (built-ins + customs), intelligence, audit |
+| Frontend | `src/app/(app)/`, `components/secure/` | Routed pages (overview, ingest, documents, intelligence, policy lab, policies, audit, architecture), transform studio (configurable), policy studio (custom CRUD + templates), bulk ingest |
 
 ## Flows
 
 ### 1. Ingest & Scan
 1. `POST /documents` — validate (Zod, multipart bounds match JSON), pre-read size caps, parse (isolated, SSRF-guarded Docling optional), `scanContent` → `computeRisk` → classify → store `SCANNED` → build intelligence → audit `UPLOAD`.
    Re-scan (`POST /documents/:id/scan`) accepts an optional `{ config }` (detector families + `minConfidence`), persisted per document and reused by default.
+   Bulk (`POST /documents/batch`, multipart `files[]` 1–20 / 100 MB total) ingests with bounded concurrency, sha256 duplicate-skip, per-file outcomes, and an optional per-file auto pipeline; single-file, paste, and sample paths share the same `ingestDocument` routine.
 
 ### 2. Sanitize
 2. `POST /documents/:id/sanitize` `{ policy, findingActions[]? }` — map findings → policy buckets (allow/mask/remove/block, injections always quarantine) with reviewer per-finding overrides applied on top (secret/injection `ALLOW` rejected and engine-degraded) → `sanitizeContent` → compute residual risk → store `SANITIZED`/`BLOCKED` (+ `sanitizedPolicy` marker) → audit.
@@ -56,6 +57,9 @@ The platform is an **intelligent content transformation engine**: it analyses th
 
 ### 4. Validate & Deliver
 4. `GET /documents/:id/security-report`, `/history`, `/intelligence` — risk breakdown, DLP status, citations, audit trail.
+
+### 5. Auto pipeline (one click)
+5. `POST /documents/:id/pipeline` runs stages 2–4 server-side in one call — sanitize (policy + optional reviewer overrides) → transform each artefact → validate (HTML sanitize + DLP + grounding) → release. Progress streams as Server-Sent Events (`sanitize-start/done`, per-artefact `transform-start/done`, terminal `done`/`blocked`/`error`) with heartbeats for long batches; disconnecting stops at the next stage boundary with finished artefacts kept. The Transform tab's **Run full pipeline** button drives it using the current policy, outputs, and generation params.
 
 ## Generation Parameters
 
@@ -78,4 +82,4 @@ The platform is an **intelligent content transformation engine**: it analyses th
 - `next build` → `.next/standalone` (Bun/Node runtime, `output: standalone`)
 - `docker-compose.yml`: `app` (Next) + `caddy` (:81 reverse-proxy with HSTS/CSP) + optional `docling` Python worker
 - `proxy.ts` + `next.config.ts` emit security headers; rate-limit is in-memory (swap to Redis for scale)
-- Single-page frontend (`src/app/page.tsx`, Zustand, Tailwind, shadcn/ui, Recharts, TanStack Table)
+- Routed multi-page frontend (`src/app/(app)/`, Zustand for UI state, Tailwind, shadcn/ui, Recharts, TanStack Table) with per-route titles, loading skeletons, and an error boundary

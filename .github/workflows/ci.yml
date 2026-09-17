@@ -5,9 +5,18 @@ on:
     branches: [main, master]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -21,18 +30,18 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install deps
-        run: bun install --frozen-lockfile || bun install
+      - name: Install deps (locked — no silent lockfile drift)
+        run: bun install --frozen-lockfile
 
       - name: Prisma generate
         run: bunx prisma generate
         env:
           DATABASE_URL: file:./prisma/dev.db
 
-      - name: Lint
+      - name: Lint (0 errors; warnings tracked)
         run: bun run lint
 
-      - name: Typecheck
+      - name: Typecheck (strict)
         run: bun run typecheck
 
       - name: DB push (SQLite)
@@ -58,10 +67,20 @@ jobs:
 
       - name: Check no secrets in build
         run: |
-          if grep -r "GEMINI_API_KEY\|GROQ_API_KEY\|sk-\|gsk_" .next --include="*.js" 2>/dev/null | grep -v ".next/cache" | head -n 5; then
-            echo "::warning::Potential secret found in build output — review."
+          # Env *names* (process.env.GEMINI_API_KEY) legitimately appear in server chunks;
+          # fail only on *values*: Groq live keys (gsk_), Google AI keys (AIza), OpenAI (sk-).
+          if grep -rE "gsk_[A-Za-z0-9]{10,}|AIza[0-9A-Za-z_-]{20,}|sk-(live|proj)-[A-Za-z0-9]{10,}" .next --include="*.js" 2>/dev/null | grep -v ".next/cache" | head -n 5; then
+            echo "::error::Potential secret value found in build output — review."
+            exit 1
           fi
           echo "Secret scan of build output completed."
+
+      - name: Check security headers present
+        run: |
+          grep -q "Strict-Transport-Security" next.config.ts || (echo "::error::HSTS header missing from next.config.ts" && exit 1)
+          grep -q "Content-Security-Policy" next.config.ts || (echo "::error::CSP header missing from next.config.ts" && exit 1)
+          grep -q "X-Frame-Options" src/proxy.ts || (echo "::error::X-Frame-Options missing from proxy.ts" && exit 1)
+          echo "Security headers present."
 
       - name: Upload build artifact (optional)
         uses: actions/upload-artifact@v4

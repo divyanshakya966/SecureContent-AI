@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { serializeDocument, logAudit } from "@/lib/api/helpers";
 import { DocumentIdSchema, parseOr400 } from "@/lib/validation/schemas";
 import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
+import { requireApiAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -34,6 +35,8 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const _auth = requireApiAuth(req);
+  if (_auth) return _auth;
   const rl = checkRateLimit(rateLimitKey(req, "DELETE /documents/:id"), { max: 20, windowMs: 60_000 });
   if (!rl.allowed) {
     return NextResponse.json({ error: "Rate limited" }, { status: 429, headers: rateLimitHeaders(rl, 20) });

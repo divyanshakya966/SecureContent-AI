@@ -6,6 +6,7 @@ import type { RawFinding, FindingOverrides } from "@/lib/security";
 import type { SanitizeAction } from "@/types";
 import { SanitizeSchema, DocumentIdSchema, parseOr400 } from "@/lib/validation/schemas";
 import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
+import { requireApiAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const _auth = requireApiAuth(req);
+  if (_auth) return _auth;
   const { id } = await params;
   const idCheck = parseOr400(DocumentIdSchema, id);
   if (!idCheck.ok) return NextResponse.json({ error: idCheck.error }, { status: 400 });
@@ -23,8 +26,7 @@ export async function POST(
   const body: unknown = await req.json().catch(() => ({}));
   const parsed = parseOr400(SanitizeSchema, body);
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400, headers: rateLimitHeaders(rl, 20) });
-  // Accept `profile` as an alias for `policy` (same vocabulary) — but never
-  // silently fall back: an explicit unknown value is a 400 via the schema.
+  // `profile` aliases `policy`; unknown values 400 via the schema.
   const rawBody = body as { policy?: string; profile?: string };
   const policyName = rawBody.policy ?? rawBody.profile ?? (parsed.data.policy as string) ?? "PUBLIC_RELEASE";
   const requestedOverrides = (parsed.data.findingActions ?? []) as { id?: string; location?: string; type?: string; action: SanitizeAction }[];
@@ -60,7 +62,7 @@ export async function POST(
   if (rawFindings.length === 0) {
     const detected = scanContent(doc.rawContent);
     rawFindings.push(...detected);
-    // Persist live-scanned findings so the findings inventory stays complete.
+
     if (detected.length > 0) {
       const existingKeys = new Set(doc.findings.map((f) => `${f.location}|${f.type}`));
       const fresh = detected.filter((f) => !existingKeys.has(`char_offset:${f.start}-${f.end}|${f.type}`));
@@ -84,9 +86,7 @@ export async function POST(
     }
   }
 
-  // Reviewer per-finding overrides: resolve each request to a concrete INPUT
-  // finding of this document, enforcing the platform invariants up front
-  // (injections: quarantine/redact only; secrets: never ALLOW).
+  // Resolve reviewer overrides to this document's INPUT findings (invariants enforced).
   const overrides: FindingOverrides = new Map();
   const overrideKeyToId = new Map<string, string>();
   for (const o of requestedOverrides) {
@@ -116,8 +116,7 @@ export async function POST(
   const residualFindings = scanContent(result.sanitizedContent);
   const residualRisk = computeRisk(residualFindings);
 
-  // Record which policy produced the working copy so later steps can detect
-  // a stale copy (sanitized under a different profile) and re-sanitize.
+  // Track the producing policy so stale copies get re-sanitized.
   let metadata: Record<string, unknown> = {};
   try {
     metadata = JSON.parse(doc.metadata ?? "{}");
@@ -137,9 +136,7 @@ export async function POST(
     },
   });
 
-  // Bulk update finding actions in a transaction to avoid N+1 and partial state.
-  // Stage-scoped so INPUT actions never clobber OUTPUT-stage records at the
-  // same offsets. Reviewer-overridden findings update by id (exact).
+  // Transactional, INPUT-scoped action updates (overrides update by id).
   if (result.actions.length > 0) {
     await db.$transaction(
       result.actions.map((a) => {

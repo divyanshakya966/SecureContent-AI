@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { documentPath } from "@/lib/nav";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ShieldCheck, Users, Crown, HeartHandshake, Bug, Eye, ArrowRight, Inbox, FileScan } from "lucide-react";
 import { api } from "@/lib/api-client";
 import type { DocumentRecord, PolicyCompareResult, TransformationProfile, OutputType, PolicyRule } from "@/types";
-import { useApp } from "@/lib/store";
 import { policyDisplayName } from "@/lib/security/policies";
 import { sanitizeForDisplay } from "@/lib/text";
 import { HelpButton } from "@/components/secure/help-button";
@@ -30,11 +31,11 @@ function ExpandablePreview({ text, clampClass = "line-clamp-[10]" }: { text: str
 }
 
 const PROFILE_META: Record<TransformationProfile, { label: string; audience: string; icon: any; color: string; description: string }> = {
-  PUBLIC_RELEASE: { label: "Public Release", audience: "General Public", icon: Eye, color: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30", description: "High-level facts only" },
-  INTERNAL_SUMMARY: { label: "Internal Summary", audience: "Internal Teams", icon: Users, color: "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30", description: "Aggregate internal detail" },
-  EXECUTIVE_BRIEF: { label: "Executive Brief", audience: "Leadership", icon: Crown, color: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30", description: "Strategic context" },
-  HR_SAFE: { label: "HR Safe", audience: "HR", icon: HeartHandshake, color: "bg-violet-500/10 text-violet-700 dark:text-violet-400 border-violet-500/30", description: "Roles, not names" },
-  SECURITY_INCIDENT: { label: "Security Incident", audience: "SOC / IR", icon: Bug, color: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30", description: "IOCs/TTPs preserved" },
+  PUBLIC_RELEASE: { label: "Public Release", audience: "General Public", icon: Eye, color: "bg-[var(--risk-safe)]/10 text-[var(--risk-safe)] border-[var(--risk-safe)]/30", description: "High-level facts only" },
+  INTERNAL_SUMMARY: { label: "Internal Summary", audience: "Internal Teams", icon: Users, color: "bg-[var(--chart-4)]/10 text-[var(--chart-4)] border-[var(--chart-4)]/30", description: "Aggregate internal detail" },
+  EXECUTIVE_BRIEF: { label: "Executive Brief", audience: "Leadership", icon: Crown, color: "bg-[var(--risk-medium)]/10 text-[var(--risk-medium)] border-[var(--risk-medium)]/30", description: "Strategic context" },
+  HR_SAFE: { label: "HR Safe", audience: "HR", icon: HeartHandshake, color: "bg-[var(--chart-5)]/10 text-[var(--chart-5)] border-[var(--chart-5)]/30", description: "Roles, not names" },
+  SECURITY_INCIDENT: { label: "Security Incident", audience: "SOC / IR", icon: Bug, color: "bg-[var(--risk-critical)]/10 text-[var(--risk-critical)] border-[var(--risk-critical)]/30", description: "IOCs/TTPs preserved" },
 };
 
 const BUILTIN_PROFILES: TransformationProfile[] = ["PUBLIC_RELEASE", "INTERNAL_SUMMARY", "EXECUTIVE_BRIEF", "HR_SAFE", "SECURITY_INCIDENT"];
@@ -54,7 +55,8 @@ function metaFor(profile: string, policies: PolicyRule[]): { label: string; audi
 }
 
 export function PolicyCompareView() {
-  const { openDocument, setView } = useApp();
+  const router = useRouter();
+  const openDocument = (id: string) => router.push(documentPath(id));
   const [docs, setDocs] = useState<DocumentRecord[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [outputType, setOutputType] = useState<OutputType>("EXECUTIVE_SUMMARY");
@@ -120,7 +122,7 @@ export function PolicyCompareView() {
           <p className="mx-auto mt-1 max-w-[52ch] text-xs leading-relaxed text-muted-foreground">
             Ingest a document to collect information. Policy comparison requires a processed document — upload or paste a file through the pipeline, then return here to compare how each audience policy transforms the same source.
           </p>
-          <Button size="sm" className="mt-4" onClick={() => setView("upload")}>
+          <Button size="sm" className="mt-4" onClick={() => router.push("/ingest")}>
             Ingest document
           </Button>
           <p className="mt-3 text-[11px] text-muted-foreground">No mock comparison is shown until you process a document manually.</p>
@@ -220,7 +222,7 @@ export function PolicyCompareView() {
                       <div className="text-xs font-semibold truncate" title={meta.label}>{meta.label}</div>
                       <div className="text-[10px] text-muted-foreground truncate" title={`${meta.audience} · ${meta.description}`}>{meta.audience} · {meta.description}</div>
                     </div>
-                    <Badge className={`ml-auto shrink-0 whitespace-nowrap text-[10px] ${item.blocked ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30" : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"}`}>
+                    <Badge className={`ml-auto shrink-0 whitespace-nowrap text-[10px] ${item.blocked ? "bg-[var(--risk-critical)]/10 text-[var(--risk-critical)] border-[var(--risk-critical)]/30" : "bg-[var(--risk-safe)]/10 text-[var(--risk-safe)] border-[var(--risk-safe)]/30"}`}>
                       {item.blocked ? "BLOCKED" : `risk ${item.riskAfter}/100`}
                     </Badge>
                   </div>
@@ -233,7 +235,7 @@ export function PolicyCompareView() {
                     <div className="flex items-center justify-center"><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>
                     <div className="rounded border bg-muted/30 p-2">
                       <div className="text-[10px] text-muted-foreground">After</div>
-                      <div className={`text-sm font-bold ${item.riskAfter < item.riskBefore ? "text-emerald-700 dark:text-emerald-400" : ""}`}>{item.riskAfter}</div>
+                      <div className={`text-sm font-bold ${item.riskAfter < item.riskBefore ? "text-[var(--risk-safe)]" : ""}`}>{item.riskAfter}</div>
                     </div>
                   </div>
 

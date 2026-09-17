@@ -4,6 +4,7 @@ import { serializePolicy, ensureDefaultPolicies, stringifyArr, logAudit } from "
 import { isBuiltinPolicy, validatePolicyBuckets, BUILTIN_POLICY_NAMES } from "@/lib/security/policies";
 import { PolicyCreateSchema, parseOr400 } from "@/lib/validation/schemas";
 import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
+import { requireApiAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -21,6 +22,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const _auth = requireApiAuth(req);
+  if (_auth) return _auth;
   const rl = checkRateLimit(rateLimitKey(req, "POST /api/v1/policies"), { max: 15, windowMs: 60_000 });
   if (!rl.allowed) {
     return NextResponse.json({ error: "Rate limited" }, { status: 429, headers: rateLimitHeaders(rl, 15) });
@@ -33,13 +36,12 @@ export async function POST(req: NextRequest) {
   }
   const data = parsed.data;
 
-  // Built-in names are reserved — clone under a new name instead.
+
   if (isBuiltinPolicy(data.name)) {
     return NextResponse.json({ error: `"${data.name}" is a built-in policy and cannot be recreated. Clone it under a new name.` }, { status: 409, headers: rateLimitHeaders(rl, 15) });
   }
 
-  // Shared bucket validation: known entries only, one bucket per entry,
-  // and never allow-list credentials or injections.
+
   const bucketErrors = validatePolicyBuckets({ allow: data.allow, mask: data.mask, remove: data.remove, block: data.block });
   if (bucketErrors.length > 0) {
     return NextResponse.json({ error: bucketErrors.join(" ") }, { status: 400, headers: rateLimitHeaders(rl, 15) });
@@ -67,7 +69,7 @@ export async function POST(req: NextRequest) {
     await logAudit({ actor: "analyst", action: "POLICY_CREATE", detail: `Created custom policy "${created.name}" (${created.classification}, audience ${created.audience}).` });
     return NextResponse.json({ policy: serializePolicy(created) }, { status: 201, headers: rateLimitHeaders(rl, 15) });
   } catch (e: unknown) {
-    // Unique constraint violation → 409
+
     const msg = e instanceof Error ? e.message : "";
     if (msg.includes("Unique constraint") || msg.includes("UNIQUE")) {
       return NextResponse.json({ error: "Policy with this name already exists." }, { status: 409, headers: rateLimitHeaders(rl, 15) });

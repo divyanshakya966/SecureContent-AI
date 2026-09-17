@@ -1,5 +1,4 @@
-// SecureContent AI — Built-in transformation policies.
-// Each policy defines what the generated output is allowed to contain.
+// Built-in transformation policies: what generated output may contain.
 
 import type { PolicyRule } from "@/types";
 
@@ -99,9 +98,6 @@ export const OUTPUT_LABELS: Record<string, string> = {
   MEETING_MINUTES: "Meeting Minutes",
 };
 
-// ---------------------------------------------------------------------------
-// Custom-policy support
-// ---------------------------------------------------------------------------
 
 /** Names shipped with the platform. Built-ins are immutable (clone to customize). */
 export const BUILTIN_POLICY_NAMES: readonly string[] = [
@@ -123,7 +119,7 @@ export function policyDisplayName(name: string): string {
 
 /** Every value the engine understands inside allow/mask/remove/block buckets. */
 export const KNOWN_BUCKET_ENTRIES: readonly string[] = [
-  // Finding types
+
   "EMAIL", "PHONE", "AADHAAR", "PAN", "CREDIT_CARD", "SSN", "PASSPORT",
   "DRIVERS_LICENSE", "POSTAL_CODE", "BANK_ACCOUNT", "IBAN", "IFSC", "UPI",
   "IP_ADDRESS", "IPV6_ADDRESS", "PERSON_NAME", "DATE_OF_BIRTH", "ADDRESS",
@@ -131,9 +127,9 @@ export const KNOWN_BUCKET_ENTRIES: readonly string[] = [
   "AUTH_TOKEN", "PASSWORD", "INJECTION_PHRASE", "ROLE_MANIPULATION",
   "HIDDEN_INSTRUCTION", "TOOL_INVOCATION", "UNSAFE_URL", "INTERNAL_URL",
   "INTERNAL_PROJECT",
-  // Finding categories
+
   "PII", "SECRET", "PROMPT_INJECTION", "INTERNAL_ASSET", "UNSAFE_URL",
-  // Legacy allow-tokens (content classes, not finding types)
+  // Legacy allow-tokens (content classes).
   "high_level_facts", "aggregate_statistics", "public_contact_information",
   "internal_project_names", "strategic_context", "role_descriptions",
   "timeline_facts", "root_cause_summary", "follow_up_actions", "iocs", "ttps", "evidence",

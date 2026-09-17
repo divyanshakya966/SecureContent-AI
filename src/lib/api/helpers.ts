@@ -1,4 +1,4 @@
-// SecureContent AI — API helpers: Prisma <-> API type serialization + audit logging.
+// Prisma serialization, audit logging, and policy access helpers.
 
 import { db } from "@/lib/db";
 import type {
@@ -221,7 +221,7 @@ export async function logAudit(opts: {
 export async function ensureDefaultPolicies(): Promise<void> {
   const count = await db.policy.count();
   if (count > 0) {
-    // Backfill audience for older DBs where column may be null
+
     for (const p of DEFAULT_POLICIES) {
       const existing = await db.policy.findUnique({ where: { name: p.name } });
       const audience = (p as unknown as { audience?: string }).audience ?? p.classification;

@@ -1,6 +1,4 @@
-// SecureContent AI — Output DLP
-// Re-scans generated content for PII / secret / policy leakage before release.
-// The model is never trusted to self-enforce; this is the deterministic gate.
+// Output DLP: re-scan generated content before release. Never trust the model to self-enforce.
 
 import type { PolicyRule } from "@/types";
 import type { RawFinding } from "./detectors";
@@ -45,7 +43,7 @@ export function runOutputDlp(
     reasons.push("At least one BLOCK-listed entity leaked — release refused.");
   }
 
-  // Repair: redact every detected span from the END backwards.
+  // Redact detected spans from the end backwards.
   const sorted = [...leaks].sort((a, b) => b.start - a.start);
   let repaired = content;
   for (const l of sorted) {

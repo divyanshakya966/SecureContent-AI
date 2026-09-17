@@ -10,9 +10,7 @@ interface DiffViewProps {
   afterLabel?: string;
 }
 
-// Lightweight inline diff: splits both texts on whitespace and marks spans
-// present in `before` but not in `after` as deletions, and new spans as
-// additions. Good enough to visualize sanitization redactions visually.
+// Inline word diff that marks removed vs added spans.
 export function DiffView({ before, after, beforeLabel = "Raw input", afterLabel = "Sanitized copy" }: DiffViewProps) {
   const cleanBefore = useMemo(() => sanitizeForDisplay(before), [before]);
   const cleanAfter = useMemo(() => sanitizeForDisplay(after), [after]);
@@ -63,7 +61,7 @@ function DiffColumn({
 }
 
 function tokenize(text: string): string[] {
-  // Split into words + whitespace runs, preserving structure.
+
   return text.split(/(\s+)/);
 }
 

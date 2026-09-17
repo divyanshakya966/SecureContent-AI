@@ -54,8 +54,7 @@ export async function GET(
   for (const f of inputFindings) severityBreakdown[f.severity as Severity]++;
 
   const latest = doc.transformations[0];
-  // Preview the working copy sent to the model — never fall back to raw
-  // content, which may contain unredacted secrets.
+  // Preview the working copy only — never raw content.
   const sanitized = doc.sanitizedContent;
   const preview = !sanitized
     ? "Awaiting sanitization — run Sanitize to generate the working copy preview."
@@ -93,9 +92,7 @@ export async function GET(
         action: f.action as SecurityReport["topFindings"][number]["action"],
         stage: f.stage as SecurityReport["topFindings"][number]["stage"],
         location: f.location,
-        // Withhold raw secret material from the report payload — the masked
-        // form plus reason is sufficient for reviewers; full spans live in
-        // the findings inventory.
+        // Withhold raw secrets; masked form plus reason is enough here.
         matchedText: f.category === "SECRET" ? "[withheld]" : f.matchedText.slice(0, 48),
         maskedText: f.maskedText,
         reason: f.reason,

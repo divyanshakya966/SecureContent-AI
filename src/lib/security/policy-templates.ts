@@ -1,10 +1,4 @@
-// SecureContent AI — Framework-aligned policy templates.
-//
-// Starting points inspired by reputable open-source / public frameworks.
-// They map each framework's handling expectations onto this engine's
-// allow / mask / remove / block buckets. Templates are meant to be cloned
-// and tuned — review with your own compliance team before relying on them.
-// They are NOT certifications of compliance with any regulation.
+// Framework-aligned policy templates (clone and tune; not compliance certifications).
 
 import type { Classification } from "@/types";
 

@@ -9,15 +9,18 @@ import {
 import { transformContent, runOutputDlp, scanContent, computeRisk, sanitizeOutputHtml } from "@/lib/security";
 import { TransformSchema, DocumentIdSchema, parseOr400 } from "@/lib/validation/schemas";
 import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
+import { requireApiAuth } from "@/lib/auth";
 import type { OutputType, TransformationProfile, GenerationTone, GenerationLanguage, DetailLevel, CommunicationObjective, ContentStyle } from "@/types";
 
 export const runtime = "nodejs";
 
-// POST /api/v1/documents/{id}/transform — body: { profile, outputType }
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const _auth = requireApiAuth(req);
+  if (_auth) return _auth;
   const { id } = await params;
   const idCheck = parseOr400(DocumentIdSchema, id);
   if (!idCheck.ok) return NextResponse.json({ error: idCheck.error }, { status: 400 });
@@ -49,7 +52,7 @@ export async function POST(
     style?: ContentStyle;
     batchId?: string;
   };
-  // Support batch: outputTypes array takes precedence over single outputType
+
   const requestedTypes: OutputType[] = outputTypes && outputTypes.length ? outputTypes : [outputType];
   if (requestedTypes.length > 8) {
     return NextResponse.json({ error: "Too many output types (max 8)" }, { status: 400, headers: rateLimitHeaders(rl, 10) });
@@ -68,9 +71,7 @@ export async function POST(
   const policy = await getPolicyByName(profile);
   if (!policy) return NextResponse.json({ error: "Unknown policy." }, { status: 400, headers: rateLimitHeaders(rl, 10) });
 
-  // Enforce sanitize-before-transform. If no sanitized copy exists — or the
-  // stored copy was produced under a DIFFERENT profile — (re)sanitize with the
-  // requested profile so we never send mismatched-policy content to the model.
+  // Re-sanitize when the stored copy came from a different profile.
   let storedPolicy: string | null = null;
   try {
     storedPolicy = (JSON.parse(doc.metadata ?? "{}") as { sanitizedPolicy?: string }).sanitizedPolicy ?? null;
@@ -79,10 +80,8 @@ export async function POST(
   }
   let workingContent = doc.sanitizedContent;
   if (!workingContent || storedPolicy !== profile) {
-    // Cheap on-the-fly sanitize: compute findings from rawContent and apply policy.
-    // This still requires the DB findings to exist (they do since upload scans).
     const findingsFromDb = await db.finding.findMany({ where: { documentId: id, stage: "INPUT" } });
-    // Fallback to live scan if findings somehow missing
+
     const fallbackFindings = findingsFromDb.length ? null : (await import("@/lib/security")).scanContent(doc.rawContent);
     const rawFindingsForSanitize = findingsFromDb.length
       ? findingsFromDb.map((f) => {
@@ -130,7 +129,7 @@ export async function POST(
         metadata: JSON.stringify(transformMeta),
       },
     });
-    // Persist finding action updates for audit parity (INPUT stage only)
+
     if (san.actions.length) {
       await db.$transaction(
         san.actions.map((a) => {
@@ -196,16 +195,13 @@ export async function POST(
       }
       const finalSan = sanitizeOutputHtml(outputContent);
       if (finalSan.removed.length) outputContent = finalSan.sanitized;
-      // Policy compliance mirrors validation: a first-pass DLP failure or
-      // ungrounded citations means the raw output did not satisfy policy,
-      // even though the repaired copy is what gets released.
+      // policyStatus mirrors validation, even though the repaired copy ships.
       policyStatus = outputDlp === "PASS" && grounding !== "FAIL" ? "PASS" : "FAIL";
     } catch (e: unknown) {
       console.error("[transform]", e);
       const msg = e instanceof Error ? e.message : "Transformation failed";
       const isConfigError = msg.includes("sanitizedContent is empty") || msg.includes("Transformation unavailable") || msg.includes("GEMINI_API_KEY") || msg.includes("ALLOW_OFFLINE_MOCK");
-      // Batch resilience: record the failure and continue with remaining types
-      // instead of discarding already-generated artefacts.
+      // Record the failure and continue with remaining types.
       itemErrors.push({ outputType: outType, error: isConfigError ? msg : `Transformation failed for ${outType} — please try again.` });
       await logAudit({
         documentId: id,
@@ -268,8 +264,7 @@ export async function POST(
     }
   }
 
-  // If every requested type failed, surface the failure; otherwise release
-  // the partial batch and report per-item errors additively.
+  // All-failed surfaces an error; otherwise release the partial batch.
   if (transformations.length === 0) {
     const first = itemErrors[0];
     const msg = first?.error ?? "Transformation failed — please try again.";
@@ -290,7 +285,7 @@ export async function POST(
     include: { findings: { orderBy: { createdAt: "asc" } }, transformations: { orderBy: { createdAt: "desc" } }, intelligence: true },
   });
 
-  // Backward compat: single-type requests return `transformation`, batch returns `transformations`
+
   const isSingle = requestedTypes.length === 1;
   return NextResponse.json(
     {

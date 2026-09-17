@@ -1,6 +1,4 @@
-// SecureContent AI — Local OCR helper (lightweight)
-// Tries tesseract.js when available; falls back to null so caller can use placeholder.
-// Uses sharp for preprocessing (grayscale, normalize) to improve OCR quality.
+// Optional local OCR via tesseract.js + sharp; null when unavailable.
 
 import type { Buffer } from "buffer";
 
@@ -15,9 +13,7 @@ let tesseractAvailable: boolean | null = null;
 
 function isLocalOcrEnabled(): boolean {
   const v = process.env.ENABLE_LOCAL_OCR?.trim().toLowerCase();
-  // Disabled by default — local tesseract is slow (10-20s) and can crash in Next.js standalone
-  // Enable explicitly: ENABLE_LOCAL_OCR=true  (requires `bun add tesseract.js` and `serverExternalPackages`)
-  // For production image OCR, prefer Docling worker (Pillow+pytesseract) which is faster and more accurate.
+  // Disabled by default; enable with ENABLE_LOCAL_OCR=true. Docling worker preferred in production.
   return v === "true" || v === "1" || v === "yes";
 }
 
@@ -27,8 +23,7 @@ async function isTesseractAvailable(): Promise<boolean> {
   if (tesseractLoadAttempted) return false;
   tesseractLoadAttempted = true;
   try {
-    // Dynamic import so app works even without tesseract.js installed
-    // Use eval to avoid Next.js bundling `tesseract.js/src/worker-script/...` as /ROOT/...
+    // Dynamic import with eval so bundlers skip the worker script.
     const importUrl = "tesseract.js";
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mod: any = await (0, eval)(`import(${JSON.stringify(importUrl)})`);
@@ -43,16 +38,16 @@ async function isTesseractAvailable(): Promise<boolean> {
 async function preprocessWithSharp(buffer: Buffer): Promise<Buffer> {
   try {
     const sharp = (await import("sharp")).default;
-    // Normalize for OCR: grayscale, increase contrast, resize if too small
+
     const img = sharp(buffer);
     const meta = await img.metadata().catch(() => null);
     let pipeline = img.grayscale().normalize();
-    // If image is tiny, upscale 2x for OCR readability
+    // Upscale tiny images 2x.
     if (meta && meta.width && meta.height && meta.width < 800) {
       const scale = Math.min(2, Math.ceil(800 / meta.width));
       pipeline = pipeline.resize({ width: meta.width * scale, withoutEnlargement: false, kernel: "cubic" as any });
     }
-    // Ensure PNG output for tesseract
+
     const out = await pipeline.png().toBuffer();
     return out;
   } catch {
@@ -66,15 +61,14 @@ export async function ocrImageBuffer(buffer: Buffer, opts?: { lang?: string; tim
   const timeoutMs = opts?.timeoutMs ?? 8000;
   if (!(await isTesseractAvailable())) return null;
   if (!buffer || buffer.length < 100) return null;
-  // SVG is vector — rasterizing via sharp may be needed; tesseract on raw SVG is poor
-  // We handle SVG separately via xml extraction elsewhere, so skip OCR for SVG here
+  // Skip SVG (handled via XML extraction).
   if (buffer.toString("utf8", 0, 200).includes("<svg")) return null;
 
   let preprocessed = buffer;
   try {
     preprocessed = await preprocessWithSharp(buffer);
   } catch {
-    // keep original
+
   }
 
   try {
@@ -103,7 +97,7 @@ export async function ocrImageBuffer(buffer: Buffer, opts?: { lang?: string; tim
         return null;
       }
     })();
-    // Avoid an unhandled rejection if the timeout wins and the worker later fails.
+    // Swallow late worker failures after a timeout win.
     ocrPromise.catch(() => null);
 
     const res = await Promise.race([ocrPromise, timeoutPromise]);

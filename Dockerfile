@@ -2,7 +2,7 @@
 # Works on Fedora/Windows (Docker Desktop/WSL) without heavy resources.
 # Multi-stage: deps -> builder -> runner. SQLite lives in /app/db (volume).
 
-FROM oven/bun:1 AS base
+FROM oven/bun:1.3 AS base
 WORKDIR /app
 
 # ---- deps ----
@@ -23,7 +23,7 @@ ENV DATABASE_URL="file:./prisma/dev.db"
 RUN bun run build
 
 # ---- runner ----
-FROM node:22-slim AS runner
+FROM node:22.19-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0

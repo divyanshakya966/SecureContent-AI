@@ -1,57 +1,51 @@
-// SecureContent AI — Text normalization for ingest & display
-// Fixes "obscure characters" after ingesting binary/mis-encoded documents:
-// - strips control characters, zero-width, replacement chars
-// - normalizes unicode, preserves \n \r \t
-// - avoids splitting surrogate pairs when truncating
+// Text normalization for ingest and display (control chars, unicode, truncation).
 
 const CONTROL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
 const ZERO_WIDTH_RE = /[\u200B-\u200D\uFEFF\u00AD]/g;
 const REPLACEMENT_RE = /\uFFFD/g;
-// Keep printable + common punctuation, but normalize excessive whitespace later if needed
-// We preserve \n, \r, \t explicitly via CONTROL_RE exception above
+
 
 export function normalizeIngestedText(input: string): string {
   if (!input) return "";
   let s = input;
 
-  // Normalize unicode (NFC) — merges composed characters, fixes mojibake remnants
+  // NFC normalize.
   try {
     s = s.normalize("NFC");
   } catch {
     // ignore
   }
 
-  // Remove replacement characters produced by invalid utf8 decode
+
   s = s.replace(REPLACEMENT_RE, "");
 
-  // Strip zero-width / soft hyphen
+
   s = s.replace(ZERO_WIDTH_RE, "");
 
-  // Strip C0 controls except \n (0A), \r (0D), \t (09)
+
   s = s.replace(CONTROL_RE, "");
 
-  // Remove DEL and other non-printables that survived
-  // Also strip lone surrogates that would render as obscure boxes
+  // Strip DEL, non-printables, and lone surrogates.
   // eslint-disable-next-line no-control-regex
   s = s.replace(/[\uD800-\uDFFF]/g, "");
 
-  // Collapse 3+ consecutive blank lines to 2 (preserve paragraphs, avoid giant gaps)
+  // Collapse 3+ blank lines to 2.
   s = s.replace(/\n{3,}/g, "\n\n");
 
-  // Trim trailing whitespace per line but keep line breaks
+
   s = s
     .split("\n")
     .map((line) => line.replace(/[ \t]+$/g, ""))
     .join("\n");
 
-  // Limit to prevent UI jank — caller should also enforce max chars
+
   return s;
 }
 
 export function sanitizeForDisplay(input: string, maxChars = 200_000): string {
   let s = normalizeIngestedText(input);
   if (s.length > maxChars) {
-    // Grapheme-safe truncation: avoid cutting surrogate pairs / combining marks
+
     s = Array.from(s).slice(0, maxChars).join("");
   }
   return s;
@@ -59,7 +53,7 @@ export function sanitizeForDisplay(input: string, maxChars = 200_000): string {
 
 export function isProbablyBinaryText(s: string): boolean {
   if (!s || s.trim().length < 20) return false;
-  // Allow-list: documents intentionally containing secrets/injection payloads
+  // Secrets and payloads are meaningful for scanning, not binary.
   if (/AKIA[0-9A-Z]{12,}|ASIA[0-9A-Z]{12,}|ghp_[A-Za-z0-9]{10,}|gho_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,}|glpat-[A-Za-z0-9_-]{10,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk_live_[A-Za-z0-9]{10,}|sk-[A-Za-z0-9]{14,}|AIza[0-9A-Za-z_-]{35}|BEGIN.*PRIVATE KEY|BEGIN PGP|ssh-(?:rsa|ed25519)|eyJ[A-Za-z0-9_-]{6,}\.eyJ|postgres(?:ql)?:\/\/|mongodb(\+srv)?:\/\/|AccountKey=|Bearer\s+[A-Za-z0-9]/.test(s)) return false;
 
   const sample = s.slice(0, 4000);
@@ -75,7 +69,7 @@ export function isProbablyBinaryText(s: string): boolean {
   const avgWordLen = words.length ? sample.length / words.length : 0;
   const hasCommonWord = /\b(the|and|or|is|to|of|in|for|with|on|as|by|at|from|this|that|with|was|are|document|report|incident|security)\b/i.test(sample);
 
-  // Few words but huge avg length and no spaces → compressed/blob fragment
+
   if (words.length < 4) {
     if (avgWordLen > 15 && spaceRatio < 0.05) return true;
     if (sample.length > 60 && spaceRatio < 0.03) return true;
@@ -105,7 +99,7 @@ export function scoreTextQuality(input: string): TextQuality {
   if (!input || !input.trim()) {
     return { printableRatio: 0, spaceRatio: 0, avgWordLen: 0, wordCount: 0, dictionaryRatio: 0, score: 0, isGarbage: true };
   }
-  // Allow secrets to pass even if they look like garbage — they are still meaningful for scanning
+
   if (/AKIA[0-9A-Z]{12,}|ASIA[0-9A-Z]{12,}|ghp_[A-Za-z0-9]{10,}|gho_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,}|glpat-[A-Za-z0-9_-]{10,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk_live_[A-Za-z0-9]{10,}|sk-[A-Za-z0-9]{14,}|AIza[0-9A-Za-z_-]{35}|BEGIN.*PRIVATE KEY|BEGIN PGP|ssh-(?:rsa|ed25519)|eyJ[A-Za-z0-9_-]{6,}\.eyJ|postgres(?:ql)?:\/\/|mongodb(\+srv)?:\/\/|AccountKey=|Bearer\s+[A-Za-z0-9]/.test(input.slice(0, 4000))) {
     return { printableRatio: 1, spaceRatio: 0.15, avgWordLen: 10, wordCount: 10, dictionaryRatio: 0.1, score: 0.8, isGarbage: false };
   }
@@ -120,7 +114,7 @@ export function scoreTextQuality(input: string): TextQuality {
   const avgWordLen = words.length ? sample.length / words.length : 0;
   const dictMatches = (sample.match(COMMON_WORD_RE) || []).length;
   const dictionaryRatio = dictMatches / Math.max(1, words.length);
-  // Heuristic garbage signals
+
   const gibberishWordRe = /[^a-zA-Z0-9]/;
   let alphaWords = 0;
   let garbledWords = 0;
@@ -128,7 +122,7 @@ export function scoreTextQuality(input: string): TextQuality {
     const cleaned = w.replace(/^[^\w]+|[^\w]+$/g, "");
     if (!cleaned) continue;
     if (/^[a-zA-Z]{2,20}$/.test(cleaned)) alphaWords++;
-    // word with many symbols/digits mixed and no vowels → likely garbled
+
     if (/[^a-zA-Z]/.test(cleaned) && !/[aeiouAEIOU]/.test(cleaned) && cleaned.length > 5) garbledWords++;
     if (cleaned.length > 25) garbledWords++;
   }
@@ -144,10 +138,10 @@ export function scoreTextQuality(input: string): TextQuality {
   else if (avgWordLen > 20) isGarbage = true;
   else if (garbledRatio > 0.35) isGarbage = true;
   else if (alphaRatio < 0.15 && words.length > 10 && dictionaryRatio < 0.03) isGarbage = true;
-  // Very short extraction with no spaces and no dictionary words → garbage
+
   else if (words.length < 8 && avgWordLen > 12 && dictionaryRatio === 0) isGarbage = true;
 
-  // Score 0..1 (1 = clean)
+
   let score = printableRatio * 0.35 + Math.min(1, spaceRatio * 6) * 0.25 + Math.min(1, dictionaryRatio * 8) * 0.2 + (1 - Math.min(1, garbledRatio * 2)) * 0.2;
   score = Math.max(0, Math.min(1, score));
   if (isGarbage) score = Math.min(score, 0.35);

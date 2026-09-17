@@ -31,7 +31,7 @@ export async function checkDatabaseHealth(): Promise<{ ok: boolean; latencyMs: n
   }
 }
 
-// Graceful shutdown — close Prisma on process exit (important for serverless/standalone).
+
 if (typeof process !== "undefined" && process.on) {
   const shutdown = async () => {
     try {

@@ -5,6 +5,7 @@ import { scanContent, sanitizeContent, computeRisk } from "@/lib/security";
 import type { RawFinding } from "@/lib/security";
 import { PolicyCompareSchema, DocumentIdSchema, parseOr400 } from "@/lib/validation/schemas";
 import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
+import { requireApiAuth } from "@/lib/auth";
 import type { PolicyCompareResult, PolicyCompareItem } from "@/types";
 
 export const runtime = "nodejs";
@@ -13,6 +14,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const _auth = requireApiAuth(req);
+  if (_auth) return _auth;
   const { id } = await params;
   const idCheck = parseOr400(DocumentIdSchema, id);
   if (!idCheck.ok) return NextResponse.json({ error: idCheck.error }, { status: 400 });
@@ -50,8 +53,7 @@ export async function POST(
       };
     });
 
-  // Live-scan fallback: documents ingested before finding persistence (or with
-  // wiped findings) would otherwise compare against risk 0 — misleading.
+  // Live-scan when stored findings are missing.
   if (rawFindings.length === 0 && doc.rawContent?.trim()) {
     rawFindings.push(...scanContent(doc.rawContent));
   }
@@ -76,8 +78,7 @@ export async function POST(
     items.push({
       profile: profile as PolicyCompareItem["profile"],
       audience: (policy as unknown as { audience?: string }).audience ?? policy.classification ?? profile,
-      // Never ship raw content through the compare API: when blocked, the
-      // sanitizer returns the source verbatim, so substitute a placeholder.
+      // Blocked results substitute a placeholder for raw content.
       sanitizedPreview: sanitized.blocked ? "— BLOCKED —" : sanitized.sanitizedContent.slice(0, 400),
       sanitizedContent: sanitized.blocked ? "" : sanitized.sanitizedContent,
       findingsRedacted: sanitized.actions.length,

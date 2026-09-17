@@ -7,12 +7,18 @@ import { getPolicyByName } from "@/lib/api/helpers";
 import type { RawFinding } from "@/lib/security";
 import type { TransformationProfile, OutputType } from "@/types";
 import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
+import { requireApiAuth, isSeedEnabled, safeLogDetail } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-// POST /api/v1/seed — ingest all attack samples through the full pipeline.
-// Guarded by rate limiting and idempotency (skips already-ingested titles).
+// Seed attack samples through the full pipeline (rate-limited, idempotent).
 export async function POST(req: NextRequest) {
+  // Seed is expensive (LLM calls) and writes demo data — gate it.
+  if (!isSeedEnabled()) {
+    return NextResponse.json({ error: "Seeding is disabled in production. Set ALLOW_SEED=true to enable temporarily." }, { status: 403 });
+  }
+  const auth = requireApiAuth(req);
+  if (auth) return auth;
   const rl = checkRateLimit(rateLimitKey(req, "POST /api/v1/seed"), { max: 5, windowMs: 60_000 });
   if (!rl.allowed) {
     return NextResponse.json({ error: "Rate limited — seeding is expensive, try again shortly." }, { status: 429, headers: rateLimitHeaders(rl, 5) });

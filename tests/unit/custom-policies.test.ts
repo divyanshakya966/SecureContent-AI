@@ -9,9 +9,8 @@ import {
   validatePolicyBuckets,
 } from "@/lib/security/policies";
 import { POLICY_TEMPLATES } from "@/lib/security/policy-templates";
-import { PolicyCreateSchema, SanitizeSchema, PolicyCompareSchema, ScanConfigSchema } from "@/lib/validation/schemas";
+import { PolicyCreateSchema, SanitizeSchema, PolicyCompareSchema, ScanConfigSchema, PipelineSchema } from "@/lib/validation/schemas";
 import type { PolicyRule } from "@/types";
-
 function policy(name: string): PolicyRule {
   const p = DEFAULT_POLICIES.find((x) => x.name === name)!;
   return {
@@ -145,5 +144,15 @@ describe("Policy schemas", () => {
   it("scan config validates bounds", () => {
     expect(ScanConfigSchema.safeParse({ pii: false, minConfidence: 0.7 }).success).toBe(true);
     expect(ScanConfigSchema.safeParse({ minConfidence: 2 }).success).toBe(false);
+  });
+  it("auto-pipeline schema defaults and guards batch size", () => {
+    const d = PipelineSchema.safeParse({ policy: "MY_CUSTOM", outputTypes: ["FAQ", "BLOG_POST"] });
+    expect(d.success).toBe(true);
+    if (d.success) {
+      expect(d.data.policy).toBe("MY_CUSTOM");
+      expect(d.data.tone).toBe("professional");
+    }
+    expect(PipelineSchema.safeParse({ outputTypes: Array.from({ length: 9 }, () => "FAQ") }).success).toBe(false);
+    expect(PipelineSchema.safeParse({ policy: "lowercase" }).success).toBe(false);
   });
 });

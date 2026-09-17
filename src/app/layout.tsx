@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
@@ -28,13 +28,20 @@ export const metadata: Metadata = {
   description: "Policy-aware content transformation with data protection, risk scoring, and output validation.",
   keywords: ["SecureContent AI", "Content Security", "DLP", "Threat Intelligence", "Policy Engine"],
   authors: [{ name: "SecureContent AI" }],
-  icons: { icon: "/logo.svg" },
+  icons: { icon: "/logo.svg", apple: "/logo.svg" },
   openGraph: {
     title: "SecureContent AI",
     description: "Content security platform — scan, sanitize, transform, validate.",
     siteName: "SecureContent AI",
     type: "website",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f6f8fa" },
+    { media: "(prefers-color-scheme: dark)", color: "#141d29" },
+  ],
 };
 
 export default function RootLayout({

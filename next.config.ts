@@ -23,6 +23,8 @@ const nextConfig: NextConfig = {
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
           { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
+          { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
+          { key: "Origin-Agent-Cluster", value: "?1" },
           // HSTS is only meaningful over HTTPS; Caddy terminates TLS, but we emit it for completeness.
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
           {

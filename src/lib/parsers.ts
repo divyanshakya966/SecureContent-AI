@@ -1,13 +1,5 @@
-// SecureContent AI — Document parsing layer
-// Good content processing pipeline: meaningful extraction for every source type.
-// - Validates size/MIME, then tries Docling worker (if configured) for PDF/DOCX/PPTX/images.
-// - Validates every extraction with quality scoring to avoid obscure/garbled text.
-// - PDF: pdf-parse + quality check + scanned-PDF hint + optional fallback.
-// - DOCX: mammoth + quality check.
-// - PPTX: jszip xml extraction + docling fallback (no more placeholder-only).
-// - Images: Docling OCR → local tesseract.js via sharp → metadata-rich placeholder (never garbled).
-// - SVG: XML text extraction.
-// - Text family: utf8/latin1 sniffing + binary detection to prevent PJYI~ garbage.
+// Document parsing: validate size/MIME, extract text per format with quality
+// scoring so garbled output never reaches the scanning pipeline.
 
 import crypto from "crypto";
 import { normalizeIngestedText, isProbablyBinaryText, scoreTextQuality, isMeaningfulExtractedText } from "@/lib/text";
@@ -62,6 +54,54 @@ function sha256(s: string): string {
   return crypto.createHash("sha256").update(s).digest("hex");
 }
 
+/** Strict SSRF allowlist for the Docling worker URL (server-side env, never user input). */
+export function isAllowedDoclingUrl(raw: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) return false;
+  // No credentials in URL (prevents http://user:pass@evil/ exfil).
+  if (parsed.username || parsed.password) return false;
+  const host = parsed.hostname.toLowerCase().replace(/\.$/, "").replace(/^\[|\]$/g, "");
+  if (!host) return false;
+  // Always block cloud metadata + unspecified addresses.
+  if (host === "169.254.169.254" || host === "0.0.0.0" || host === "::" || host === "[::]") return false;
+  // Allow loopback / private / link-local-denied-except-loopback + known service names.
+  const allowedNames = new Set([
+    "localhost",
+    "docling",
+    "host.docker.internal",
+    "host.containers.internal",
+  ]);
+  if (allowedNames.has(host)) return true;
+  if (host.endsWith(".internal") || host.endsWith(".local") || host.endsWith(".svc") || host.endsWith(".svc.cluster.local")) return true;
+  // IPv4 literal: allow loopback + RFC1918 + CGNAT-free private only.
+  const v4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.exec(host);
+  if (v4) {
+    const oct = host.split(".").map(Number);
+    if (oct[0] === 127) return true; // 127/8 loopback
+    if (oct[0] === 10) return true; // 10/8
+    if (oct[0] === 192 && oct[1] === 168) return true; // 192.168/16
+    if (oct[0] === 172 && oct[1] >= 16 && oct[1] <= 31) return true; // 172.16/12
+    return false; // public, CGNAT, link-local, metadata-adjacent → deny
+  }
+  // IPv6 literal: allow ::1 only (bracket form already stripped by URL parser to ::1).
+  if (host === "::1") return true;
+  if (host.includes(":")) return false; // any other IPv6 literal → deny
+  // Docker-compose service names (single label, e.g. `docling`, `worker`) are allowed;
+  // anything else with a dot is treated as public DNS → deny unless explicitly allowlisted.
+  if (!host.includes(".")) return true;
+  const extra = (process.env.DOCLING_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase().replace(/\.$/, ""))
+    .filter(Boolean);
+  if (extra.includes(host)) return true;
+  return false;
+}
+
 /** Filenames are interpolated into placeholder text — strip controls/brackets, cap length. */
 function safeName(filename: string): string {
   return (filename || "file").replace(/[\x00-\x1F\x7F\[\]\n\r]/g, "").trim().slice(0, 80) || "file";
@@ -78,13 +118,9 @@ function textStats(text: string) {
 async function tryDoclingWorker(buffer: Buffer, filename: string, mime: string): Promise<string | null> {
   const url = process.env.DOCLING_WORKER_URL;
   if (!url) return null;
-  // Basic SSRF guard: only allow http(s) to loopback / local service names
-  try {
-    const parsed = new URL(url);
-    if (!["http:", "https:"].includes(parsed.protocol)) return null;
-  } catch {
-    return null;
-  }
+  // SSRF guard: http(s) to loopback / private / known service names only.
+  // Blocks cloud metadata (169.254.169.254), 0.0.0.0, public IPs, and credentials in URL.
+  if (!isAllowedDoclingUrl(url)) return null;
   try {
     const form = new FormData();
     const blob = new Blob([new Uint8Array(buffer)], { type: mime });
@@ -102,12 +138,12 @@ async function tryDoclingWorker(buffer: Buffer, filename: string, mime: string):
       rawText = j as string;
     }
     if (!rawText) return null;
-    // Validate docling output — don't accept garbled binary that looks like PJYI~ or hex
+    // Reject garbled worker output.
     const normalized = normalizeIngestedText(rawText);
     if (!normalized.trim()) return null;
     const q = scoreTextQuality(normalized);
     if (q.isGarbage || q.score < 0.30) {
-      // Likely returned raw binary hex/utf8 fallback from worker — discard
+
       console.warn(`[parsers] Docling returned low-quality text (score ${q.score.toFixed(2)}, garbage=${q.isGarbage}) for ${filename} — discarding`);
       return null;
     }
@@ -121,7 +157,7 @@ async function tryDoclingWorker(buffer: Buffer, filename: string, mime: string):
 async function parsePdf(buffer: Buffer): Promise<{ text: string; warnings: string[]; rawPages?: number }> {
   const warnings: string[] = [];
   try {
-    // pdf-parse is CommonJS; dynamic import avoids bundler interop issues in Next.js
+    // pdf-parse is CommonJS; dynamic import avoids bundler interop issues.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mod: any = await import("pdf-parse");
     const pdfParse = (mod.default ?? mod) as (b: Buffer) => Promise<{ text: string; numpages: number; info?: unknown }>;
@@ -136,15 +172,15 @@ async function parsePdf(buffer: Buffer): Promise<{ text: string; warnings: strin
       warnings.push("PDF text normalized to empty — likely scanned or using embedded fonts. Try enhanced OCR.");
       return { text: "", warnings, rawPages: data.numpages };
     }
-    // Quality gate: pdf-parse can emit CID/garbled text for complex/embedded-font PDFs
+    // pdf-parse can emit CID/garbled text for embedded-font PDFs.
     const q = scoreTextQuality(normalized);
     if (q.isGarbage || q.score < 0.35) {
       warnings.push(`PDF text appears garbled (quality score ${q.score.toFixed(2)}). This PDF may be scanned or use embedded fonts — enhanced OCR or a DOCX/TXT export will give better results.`);
-      // If very garbled, treat as empty to trigger OCR path instead of surfacing garbage
+      // Very garbled output triggers the OCR path instead.
       if (q.score < 0.25 || q.printableRatio < 0.65) {
         return { text: "", warnings, rawPages: data.numpages };
       }
-      // Borderline: return but warn — caller will surface warning alongside extracted text
+
     }
     if (!isMeaningfulExtractedText(normalized, 40) && normalized.length < 200) {
       warnings.push("PDF extracted only a fragment of readable text — results may be incomplete. For scanned PDFs, use OCR.");
@@ -189,13 +225,13 @@ async function parseDocx(buffer: Buffer): Promise<{ text: string; warnings: stri
 async function parsePptx(buffer: Buffer): Promise<{ text: string; warnings: string[] }> {
   const warnings: string[] = [];
   try {
-    // PPTX is a ZIP of XML — extract slide texts without heavy deps
+    // PPTX is a ZIP of XML; extract slide text without heavy deps.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const jszipMod: any = await import("jszip");
     const JSZip: any = jszipMod.default ?? jszipMod;
     const zip = await JSZip.loadAsync(buffer);
     const slideTexts: string[] = [];
-    // Collect slide files sorted — cap entries (zip-bomb guard)
+    // Cap entries against zip bombs.
     const slideFiles = Object.keys(zip.files)
       .filter((p) => /^ppt\/slides\/slide\d+\.xml$/.test(p))
       .sort()
@@ -204,7 +240,7 @@ async function parsePptx(buffer: Buffer): Promise<{ text: string; warnings: stri
       warnings.push("PPTX contains an unusually large number of entries — extraction truncated to the first 200 slides.");
     }
     if (slideFiles.length === 0) {
-      // Maybe not a valid PPTX — try generic
+      // Not a valid PPTX — fall back to generic XML.
       const anyXml = Object.keys(zip.files).filter((p) => p.endsWith(".xml"));
       if (anyXml.length === 0) throw new Error("No slides found in PPTX");
     }
@@ -214,17 +250,17 @@ async function parsePptx(buffer: Buffer): Promise<{ text: string; warnings: stri
         warnings.push(`Slide "${path}" exceeds 2 MB of XML — skipped to bound memory.`);
         continue;
       }
-      // Extract <a:t> text nodes (DrawingML)
+      // <a:t> text nodes (DrawingML).
       const matches = [...xml.matchAll(/<a:t[^>]*>([^<]+)<\/a:t>/g)];
       const slideText = matches.map((m) => m[1]).join(" ").trim();
       if (slideText) slideTexts.push(slideText);
-      // Bound total decompressed text (~5 MB) against zip bombs
+      // Bound total decompressed text (~5 MB).
       if (slideTexts.join(" ").length > 5_000_000) {
         warnings.push("PPTX text exceeded 5 MB — truncated to the first slides.");
         break;
       }
     }
-    // Also try notes and title
+
     const notesFiles = Object.keys(zip.files).filter((p) => /^ppt\/notesSlides\//.test(p));
     for (const path of notesFiles.slice(0, 10)) {
       try {
@@ -234,7 +270,7 @@ async function parsePptx(buffer: Buffer): Promise<{ text: string; warnings: stri
         if (t) slideTexts.push(t);
       } catch { /* ignore */ }
     }
-    // Core properties title
+
     try {
       const core = zip.files["docProps/core.xml"];
       if (core) {
@@ -267,14 +303,14 @@ async function parseSvg(buffer: Buffer): Promise<{ text: string; warnings: strin
   const warnings: string[] = [];
   try {
     const raw = buffer.toString("utf8");
-    // Extract <text> and <tspan> content
+
     const matches = [...raw.matchAll(/<(?:text|tspan)[^>]*>([^<]+)<\/(?:text|tspan)>/gi)];
     if (matches.length) {
       const text = matches.map((m) => m[1].trim()).filter(Boolean).join("\n");
       const normalized = normalizeIngestedText(text);
       if (normalized.trim()) return { text: normalized, warnings };
     }
-    // Fallback: strip tags and see if any readable text remains
+    // Fall back to tag-stripped text.
     const stripped = raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     const normalized = normalizeIngestedText(stripped);
     if (normalized.trim() && normalized.trim().split(/\s+/).length >= 3 && !isProbablyBinaryText(normalized)) {
@@ -291,13 +327,13 @@ async function parseSvg(buffer: Buffer): Promise<{ text: string; warnings: strin
 async function parseImageWithOcr(buffer: Buffer, filename: string, mime: string): Promise<{ text: string; warnings: string[]; meta?: Record<string, unknown> }> {
   const warnings: string[] = [];
   const meta: Record<string, unknown> = {};
-  // SVG handled separately
+
   if (mime === "image/svg+xml" || filename.toLowerCase().endsWith(".svg")) {
     const r = await parseSvg(buffer);
     return { text: r.text, warnings: r.warnings, meta };
   }
 
-  // Gather sharp metadata for useful placeholder even if OCR unavailable
+  // Sharp metadata keeps the placeholder useful without OCR.
   try {
     const { getImageInfo } = await import("@/lib/ocr");
     const info = await getImageInfo(buffer);
@@ -309,8 +345,7 @@ async function parseImageWithOcr(buffer: Buffer, filename: string, mime: string)
     }
   } catch { /* ignore */ }
 
-  // Try OCR — opt-in via ENABLE_LOCAL_OCR=true (slow, 8s timeout). Disabled by default to keep uploads fast (<200ms) and avoid Next.js standalone crash.
-  // For image OCR, prefer Docling worker (Pillow+pytesseract, handles scanned PDFs & images reliably).
+  // Local OCR is opt-in (ENABLE_LOCAL_OCR, 8s timeout); Docling worker preferred.
   const enableLocalOcr = process.env.ENABLE_LOCAL_OCR?.trim().toLowerCase() === "true" || process.env.ENABLE_LOCAL_OCR?.trim() === "1";
   if (enableLocalOcr) {
     try {
@@ -319,13 +354,13 @@ async function parseImageWithOcr(buffer: Buffer, filename: string, mime: string)
       if (ocr && ocr.text) {
         const normalized = normalizeIngestedText(ocr.text);
         const q = scoreTextQuality(normalized);
-        // OCR can be noisy; accept if not garbage and at least 15 chars
+        // Accept noisy OCR at 15+ non-garbage chars.
         if (normalized.trim().length >= 15 && !q.isGarbage && q.score >= 0.25) {
           const stats = textStats(normalized);
           warnings.push(`Image OCR succeeded via ${ocr.engine} (confidence ${Math.round(ocr.confidence)}%, ${stats.wordCount} words). Review extracted text — OCR may contain errors.`);
           return { text: normalized, warnings, meta: { ...meta, ocrEngine: ocr.engine, ocrConfidence: ocr.confidence } };
         } else if (normalized.trim().length >= 15) {
-          // Low quality OCR — still return but warn
+
           warnings.push(`Image OCR produced low-confidence text (score ${q.score.toFixed(2)}). Verify before use; consider enhancing image quality or using Docling worker with high-res scan.`);
           return { text: normalized, warnings, meta };
         }
@@ -335,7 +370,7 @@ async function parseImageWithOcr(buffer: Buffer, filename: string, mime: string)
     }
   }
 
-  // No OCR or OCR failed — return metadata-rich placeholder (never garbled). Fast path (<100ms) when local OCR disabled.
+  // Without OCR text, return a metadata placeholder instead of garbage.
   const dim = meta.imageWidth && meta.imageHeight ? `${meta.imageWidth}x${meta.imageHeight}` : "unknown dimensions";
   const fmt = (meta.imageFormat as string) ?? mime.split("/")[1] ?? "image";
   const ocrDisabledNote = !enableLocalOcr ? " (local OCR is off — an administrator can enable enhanced OCR for automatic transcription)" : "";
@@ -367,7 +402,7 @@ export async function parseDocument(opts: {
   const mime = (mimeType || "").toLowerCase();
   const warnings: string[] = [];
 
-  // Trust-boundary: size + MIME validation (media gets larger allowance)
+  // Size + MIME validation (media gets a larger allowance).
   const isMedia = ["mp4", "mov", "webm", "avi", "mp3", "wav", "ogg"].includes(ext) || mime.startsWith("video/") || mime.startsWith("audio/");
   const limit = isMedia ? MAX_BYTES_MEDIA : MAX_BYTES_TEXT;
   if (buffer.byteLength > limit) {
@@ -377,7 +412,7 @@ export async function parseDocument(opts: {
     warnings.push(`Unrecognized MIME/type "${mime || ext}" — treating as text and attempting to extract.`);
   }
 
-  // Determine binary types that benefit from Docling (now includes images)
+
   const isBinaryForDocling =
     ["pdf", "docx", "doc", "pptx", "png", "jpg", "jpeg", "webp", "tiff", "svg", "mp4", "mov", "webm", "avi", "mp3", "wav", "ogg"].includes(ext) ||
     mime === "application/pdf" ||
@@ -414,10 +449,7 @@ export async function parseDocument(opts: {
     text = r.text;
     warnings.push(...r.warnings);
     if (r.rawPages) extraMeta.pdfPages = r.rawPages;
-    // If pdf-parse yielded nothing but worker was tried, we already warned. Provide OCR guidance.
     if (!text.trim()) {
-      // Don't return garbage — provide actionable placeholder that still allows scanning if user later pastes OCR
-      // But we keep text empty so route can surface 400 with helpful message; caller handles that
     }
   } else if (ext === "docx" || mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
     parser = "mammoth";
@@ -435,23 +467,22 @@ export async function parseDocument(opts: {
     text = r.text;
     warnings.push(...r.warnings);
     if (r.meta) extraMeta = { ...extraMeta, ...r.meta };
-    // Image placeholders are considered "extracted" (metadata) — don't trigger binary-text empty handling below
+
   } else if (["mp4", "mov", "webm", "avi", "mp3", "wav", "ogg"].includes(ext) || mime.startsWith("video/") || mime.startsWith("audio/")) {
     parser = "video-placeholder";
     const r = parseVideoPlaceholder(filename, mime || ext);
     text = r.text;
     warnings.push(...r.warnings);
   } else {
-    // Text-family: decode with encoding sniffing (utf8 -> latin1 fallback) and normalize
+    // Text family: encoding-sniffed decode, then normalize.
     text = decodeTextBuffer(buffer);
-    // HTML sources: drop active content entirely, then extract visible text so
-    // <script>/<style> payloads are never stored or scanned as prose.
+    // HTML: strip active content so scripts are never stored as prose.
     if (ext === "html" || ext === "htm" || mime === "text/html") {
       text = extractVisibleTextFromHtml(text);
     }
     const normalized = normalizeIngestedText(text);
     if (normalized.length > 0) text = normalized;
-    // Detect binary masquerading as text (e.g., compressed stream decoded as printable gibberish "PJYI~A-2…")
+    // Reject binary masquerading as text.
     if (isProbablyBinaryText(text) || scoreTextQuality(text).isGarbage) {
       warnings.push("File appears to be binary or encoded data but was treated as text — no readable text extracted. Upload as PDF/DOCX/PPTX/image or enable the Docling worker. If this is a text file, ensure it is UTF-8 encoded.");
       text = "";
@@ -464,13 +495,13 @@ export async function parseDocument(opts: {
     parser = "utf8";
   }
 
-  // Normalize all parser outputs to strip control/zero-width/replacement chars
+
   text = normalizeIngestedText(text);
 
-  // Final quality gate: never surface garbled output to the scanning pipeline
+  // Never surface garbled output to the scanning pipeline.
   if (text.trim()) {
     const q = scoreTextQuality(text);
-    // Allow placeholder texts (they have intentional structure) even if dictionaryRatio low
+
     const isPlaceholder = text.startsWith("[Image:") || text.startsWith("[Video/Audio:") || text.startsWith("[Image content");
     if (!isPlaceholder && (q.isGarbage || q.score < 0.30)) {
       warnings.push(`Extracted text quality low (score ${q.score.toFixed(2)}, printable ${(q.printableRatio * 100).toFixed(0)}%). Treated as no extractable text to avoid obscure output. For image/scanned PDFs, enable OCR.`);
@@ -478,15 +509,14 @@ export async function parseDocument(opts: {
     }
   }
 
-  // Final fallback: if we got almost nothing, do NOT surface raw binary snippet
-  // Exception: image/video placeholders ARE meaningful (they describe the file) — keep them
+  // Placeholders count as extracted; anything else empty stays empty.
   const isPlaceholderFinal = text.startsWith("[Image:") || text.startsWith("[Video/Audio:");
   if (!text.trim() && !isPlaceholderFinal) {
     warnings.push("No extractable text found in file. For scanned PDFs or images, enable enhanced OCR or paste the transcript as text.");
     text = "";
   }
 
-  // If text is placeholder, keep it but compute stats on it; otherwise stats on extracted text
+
   const stats = textStats(text);
   return {
     text,
@@ -516,10 +546,10 @@ function decodeTextBuffer(buf: Buffer): string {  // Try UTF-8 first; if it yiel
   const utf8 = buf.toString("utf8");
   const replacements = (utf8.match(/\uFFFD/g) || []).length;
   if (replacements > utf8.length * 0.02) {
-    // Fallback to latin1 for legacy files (common on Windows)
+    // latin1 fallback for legacy files.
     try {
       const latin = buf.toString("latin1");
-      // If latin1 is more printable, use it
+
       const uPrint = utf8.replace(/[^\x20-\x7E\x0A\x0D]/g, "").length;
       const lPrint = latin.replace(/[^\x20-\x7E\x0A\x0D]/g, "").length;
       if (lPrint > uPrint) return latin;

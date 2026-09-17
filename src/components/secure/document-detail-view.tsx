@@ -1,19 +1,20 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowLeft, Loader2, ShieldCheck, Sparkles, FileCheck2,
   ScanLine, Wand2, AlertTriangle, CheckCircle2, XCircle, ScrollText, ChevronRight,
   Brain, Hash, Crosshair, ShieldAlert, Users, Globe, ArrowRight, Eye, Lock,
-  Copy, Check, Download,
+  Copy, Check, Download, Play, Square,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useApp } from "@/lib/store";
 import type {
   DocumentRecord, Finding, SecurityReport, TransformationRecord,
   AuditLogEntry, TransformationProfile, OutputType, PolicyRule,
-  FindingActionOverride, ScanConfig, SanitizeAction,
+  FindingActionOverride, ScanConfig, SanitizeAction, PipelineEvent,
 } from "@/types";
 import { POLICY_LABELS, OUTPUT_LABELS, policyDisplayName } from "@/lib/security/policies";
 import { Card } from "@/components/ui/card";
@@ -42,29 +43,30 @@ import { HelpButton } from "@/components/secure/help-button";
 
 type Tab = "overview" | "findings" | "diff" | "transform" | "report" | "intelligence" | "history";
 
-export function DocumentDetailView() {
-  const { selectedDocumentId, setView, bumpRefresh } = useApp();
+export function DocumentDetailView({ documentId }: { documentId: string }) {
+  const { bumpRefresh } = useApp();
+  const router = useRouter();
   const [doc, setDoc] = useState<DocumentRecord | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    if (!selectedDocumentId) return;
+    if (!documentId) return;
     setLoading(true);
     try {
-      const d = await api.getDocument(selectedDocumentId);
+      const d = await api.getDocument(documentId);
       setDoc(d);
     } catch (e: any) {
       toast.error("Failed to load document", { description: e.message });
     } finally {
       setLoading(false);
     }
-  }, [selectedDocumentId]);
+  }, [documentId]);
 
   useEffect(() => { reload(); }, [reload]);
 
-  if (!selectedDocumentId) {
+  if (!documentId) {
     return <Card className="p-8 text-center text-sm text-muted-foreground">No document selected.</Card>;
   }
 
@@ -128,8 +130,7 @@ export function DocumentDetailView() {
       await reload();
       bumpRefresh();
     } catch (e: any) {
-      // The server often still completes the transform after a client-side timeout
-      // (LLM latency). Reload and check before reporting failure.
+      // The server may still complete after a client timeout; reload before failing.
       try {
         const fresh = await api.getDocument(doc!.id);
         setDoc(fresh);
@@ -142,7 +143,7 @@ export function DocumentDetailView() {
           return;
         }
       } catch {
-        // fall through to error toast
+
       }
       toast.error("Transformation failed", { description: e.message });
     } finally { setBusy(null); }
@@ -182,7 +183,6 @@ export function DocumentDetailView() {
           return;
         }
       } catch {
-        // fall through to error toast
       }
       toast.error("Batch transformation failed", { description: e.message });
     } finally { setBusy(null); }
@@ -220,7 +220,7 @@ export function DocumentDetailView() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-xs min-w-0">
-        <Button variant="ghost" size="sm" onClick={() => setView("documents")} className="h-7 gap-1 px-2 text-xs font-medium text-muted-foreground hover:text-foreground shrink-0">
+        <Button variant="ghost" size="sm" onClick={() => router.push("/documents")} className="h-7 gap-1 px-2 text-xs font-medium text-muted-foreground hover:text-foreground shrink-0">
           <ArrowLeft className="h-3.5 w-3.5" /> Documents
         </Button>
         <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/40" />
@@ -289,7 +289,7 @@ export function DocumentDetailView() {
         <div className="border-t border-border bg-muted/20 px-5 py-2.5 flex flex-wrap items-center gap-2 text-[11px]">
           <span className="font-medium text-muted-foreground">Pipeline:</span>
           <span className="font-mono">Ingest → Scan → Sanitize → Transform → Validate</span>
-          <span className="ml-auto hidden sm:inline-flex items-center gap-1.5 text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Double-gate DLP</span>
+          <span className="ml-auto hidden sm:inline-flex items-center gap-1.5 text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-[var(--risk-safe)]" /> Double-gate DLP</span>
         </div>
       </Card>
 
@@ -329,22 +329,22 @@ export function DocumentDetailView() {
           <SanitizeTab doc={doc} busy={busy} onSanitize={runSanitize} />
         </TabsContent>
 
-        {/* TRANSFORM */}
+
         <TabsContent value="transform" className="mt-4">
-          <TransformTab doc={doc} busy={busy} onTransform={runTransform} onBatch={runBatchTransform} />
+          <TransformTab doc={doc} busy={busy} onTransform={runTransform} onBatch={runBatchTransform} onAutoDone={async () => { await reload(); bumpRefresh(); }} />
         </TabsContent>
 
-        {/* REPORT */}
+
         <TabsContent value="report" className="mt-4">
           <ReportTab documentId={doc.id} />
         </TabsContent>
 
-        {/* INTELLIGENCE */}
+
         <TabsContent value="intelligence" className="mt-4">
           <IntelligenceTab documentId={doc.id} />
         </TabsContent>
 
-        {/* HISTORY */}
+
         <TabsContent value="history" className="mt-4">
           <HistoryTab documentId={doc.id} transformations={doc.transformations ?? []} />
         </TabsContent>
@@ -353,9 +353,6 @@ export function DocumentDetailView() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Overview tab
-// ---------------------------------------------------------------------------
 
 function OverviewTab({ doc, inputFindings, categoryCounts, outputFindings }: {
   doc: DocumentRecord;
@@ -473,9 +470,6 @@ function GateRow({ icon: Icon, label, status, ok }: {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Findings tab — review every detection, override its handling, tune scanning
-// ---------------------------------------------------------------------------
 
 const SCAN_FAMILIES: { key: keyof ScanConfig; label: string; hint: string }[] = [
   { key: "pii", label: "Personal data", hint: "Emails, phones, IDs, addresses, payment data" },
@@ -633,9 +627,6 @@ function FindingsPanel({ doc, inputFindings, outputFindings, busy, onSanitize, o
   );
 }
 
-// ---------------------------------------------------------------------------
-// Sanitize tab
-// ---------------------------------------------------------------------------
 
 function SanitizeTab({ doc, busy, onSanitize }: {
   doc: DocumentRecord;
@@ -709,15 +700,151 @@ function recommendPolicy(classification: string): string {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Transform tab
-// ---------------------------------------------------------------------------
 
-function TransformTab({ doc, busy, onTransform, onBatch }: {
+interface AutoProgress {
+  sanitized: boolean;
+  completed: number;
+  total: number;
+  current: string;
+  leaks: number;
+  failed: number;
+}
+
+function AutoPipelineCard({ docId, profile, outputTypes, params, busy, autoRunning, setAutoRunning, onDone }: {
+  docId: string;
+  profile: string;
+  outputTypes: OutputType[];
+  params: { tone?: string; language?: string; detailLevel?: string; objective?: string; style?: string };
+  busy: string | null;
+  autoRunning: boolean;
+  setAutoRunning: (v: boolean) => void;
+  onDone: () => Promise<void> | void;
+}) {
+  const [progress, setProgress] = useState<AutoProgress | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const steps: StepDef[] = [
+    { key: "sanitize", label: "Sanitize", desc: progress?.sanitized ? "Working copy ready" : "Policy working copy", status: failed ? "blocked" : !progress ? "upcoming" : "done" },
+    {
+      key: "transform", label: "Transform", desc: progress ? `${progress.completed}/${progress.total} artefacts` : `${outputTypes.length} selected`,
+      status: failed ? "blocked" : !progress ? "upcoming" : progress.completed >= progress.total ? "done" : "current",
+    },
+    {
+      key: "validate", label: "Validate", desc: progress && progress.completed > 0 ? (progress.leaks > 0 ? `${progress.leaks} auto-fixed` : "DLP passed") : "DLP + grounding",
+      status: failed ? "blocked" : !progress || progress.completed === 0 ? "upcoming" : progress.completed >= progress.total ? "done" : "current",
+    },
+    { key: "deliver", label: "Deliver", desc: "Release outputs", status: failed ? "blocked" : !progress ? "upcoming" : progress.completed >= progress.total && !autoRunning ? "done" : "upcoming" },
+  ];
+
+  async function run() {
+    if (!outputTypes.length) {
+      toast.error("Select at least one output type");
+      return;
+    }
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setAutoRunning(true);
+    setFailed(null);
+    setProgress({ sanitized: false, completed: 0, total: outputTypes.length, current: "", leaks: 0, failed: 0 });
+    try {
+      const res = await api.runPipeline(
+        docId,
+        { policy: profile, outputTypes, ...(params as Record<string, string>) },
+        (msg: PipelineEvent) => {
+          if (ctrl.signal.aborted) return;
+          if (msg.event === "sanitize-done") {
+            setProgress((p) => (p ? { ...p, sanitized: true } : p));
+          } else if (msg.event === "transform-start") {
+            setProgress((p) => (p ? { ...p, current: msg.outputType ?? "" } : p));
+          } else if (msg.event === "transform-done") {
+            setProgress((p) => (p ? {
+              ...p,
+              completed: msg.index ?? p.completed,
+              current: "",
+              leaks: p.leaks + (msg.leakageCount ?? 0),
+            } : p));
+          } else if (msg.event === "transform-error") {
+            setProgress((p) => (p ? { ...p, completed: msg.index ?? p.completed, failed: p.failed + 1, current: "" } : p));
+          }
+        },
+        ctrl.signal
+      );
+      const okCount = res.transformations.length;
+      const errCount = res.errors.length;
+      if (errCount > 0 && okCount === 0) {
+        setFailed(res.errors[0]?.error ?? "All transformations failed.");
+        toast.error("Auto pipeline failed", { description: res.errors[0]?.error });
+      } else if (errCount > 0) {
+        toast.warning(`Pipeline delivered ${okCount} of ${outputTypes.length} artefacts`, { description: `${res.errors.map((e) => e.outputType).join(", ")} failed — retry those types.` });
+      } else {
+        const leaks = res.transformations.reduce((s, t) => s + (t.leakageCount ?? 0), 0);
+        toast.success(`Pipeline delivered ${okCount} artefact${okCount !== 1 ? "s" : ""}`, { description: leaks ? `${leaks} leakage candidate(s) auto-fixed by DLP.` : "Sanitized, transformed, and validated." });
+      }
+      await onDone();
+    } catch (e: any) {
+      if (ctrl.signal.aborted) {
+        toast.warning("Auto run stopped", { description: "Finished artefacts were kept — reload shows current state." });
+        try { await onDone(); } catch { /* ignore */ }
+      } else {
+        setFailed(e.message);
+        toast.error("Auto pipeline failed", { description: e.message });
+      }
+    } finally {
+      setAutoRunning(false);
+      abortRef.current = null;
+    }
+  }
+
+  function cancel() {
+    abortRef.current?.abort();
+  }
+
+  return (
+    <Card className="p-5 border-primary/25 bg-primary/[0.03]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold tracking-tight flex items-center gap-1.5">
+            <Play className="h-4 w-4 text-primary" /> Full auto pipeline
+            <HelpButton title="What auto-run does">
+              One click runs the whole chain on the server: sanitize with the selected policy, generate every selected artefact, then validate each with HTML sanitization, DLP, and grounding checks — with live progress below. It uses policy buckets (per-finding choices from the Findings tab are not included; sanitize manually for those). Safe to close or cancel mid-run: finished artefacts are kept.
+            </HelpButton>
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {policyDisplayName(profile)} · {outputTypes.length} artefact{outputTypes.length !== 1 ? "s" : ""} ({outputTypes.map((t) => OUTPUT_LABELS[t]).join(", ") || "none selected"})
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          {autoRunning ? (
+            <Button variant="outline" size="sm" onClick={cancel} className="gap-1.5">
+              <Square className="h-3.5 w-3.5" /> Stop
+            </Button>
+          ) : (
+            <Button size="sm" onClick={run} disabled={!!busy || docId === "" || !outputTypes.length} className="gap-1.5">
+              <Play className="h-3.5 w-3.5" /> Run full pipeline
+            </Button>
+          )}
+        </div>
+      </div>
+      {(progress || failed) && (
+        <div className="mt-4">
+          <Stepper steps={steps} />
+          {failed && <p className="mt-2 text-xs text-destructive">{failed}</p>}
+          {autoRunning && progress && progress.current && (
+            <p className="mt-2 text-xs text-muted-foreground">Working on {OUTPUT_LABELS[progress.current as OutputType] ?? progress.current}…</p>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function TransformTab({ doc, busy, onTransform, onBatch, onAutoDone }: {
   doc: DocumentRecord;
   busy: string | null;
   onTransform: (profile: TransformationProfile, outputType: OutputType, params?: Record<string, string>) => void;
   onBatch?: (profile: TransformationProfile, outputTypes: OutputType[], params?: Record<string, string>) => void;
+  onAutoDone: () => Promise<void> | void;
 }) {
   const [profile, setProfile] = useState<string>(recommendProfile(doc.classification));
   const [tone, setTone] = useState<string>("professional");
@@ -728,6 +855,7 @@ function TransformTab({ doc, busy, onTransform, onBatch }: {
   const [selectedTypes, setSelectedTypes] = useState<OutputType[]>(["EXECUTIVE_SUMMARY"]);
   const [viewTxId, setViewTxId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [autoRunning, setAutoRunning] = useState(false);
   const [txPolicies, setTxPolicies] = useState<PolicyRule[] | null>(null);
   useEffect(() => {
     api.getPolicies().then((ps) => setTxPolicies(ps.filter((p) => p.active))).catch(() => setTxPolicies(null));
@@ -785,6 +913,16 @@ function TransformTab({ doc, busy, onTransform, onBatch }: {
 
   return (
     <div className="space-y-4">
+      <AutoPipelineCard
+        docId={doc.id}
+        profile={profile}
+        outputTypes={selectedTypes}
+        params={{ tone, language, detailLevel, objective, style }}
+        busy={busy}
+        autoRunning={autoRunning}
+        setAutoRunning={setAutoRunning}
+        onDone={onAutoDone}
+      />
       <Card className="p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -913,7 +1051,7 @@ function TransformTab({ doc, busy, onTransform, onBatch }: {
         </div>
 
         <div className="mt-5 flex gap-2">
-          <Button onClick={handleSingleGenerate} disabled={!!busy || doc.status === "BLOCKED" || !selectedTypes.length} className="flex-1 gap-1.5">
+          <Button onClick={handleSingleGenerate} disabled={!!busy || autoRunning || doc.status === "BLOCKED" || !selectedTypes.length} className="flex-1 gap-1.5">
             {busy === "transform" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             {selectedTypes.length > 1 ? `Generate ${selectedTypes.length} artefacts` : "Generate artefact"}
           </Button>
@@ -1014,9 +1152,6 @@ function recommendProfile(classification: string): TransformationProfile {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Report tab
-// ---------------------------------------------------------------------------
 
 function ReportTab({ documentId }: { documentId: string }) {
   const [report, setReport] = useState<SecurityReport | null>(null);
@@ -1162,9 +1297,6 @@ function printReport(report: SecurityReport) {
   URL.revokeObjectURL(url);
 }
 
-// ---------------------------------------------------------------------------
-// Intelligence tab (signature innovation #2)
-// ---------------------------------------------------------------------------
 
 function IntelligenceTab({ documentId }: { documentId: string }) {
   const [data, setData] = useState<import("@/types").IntelligenceReport | null>(null);
@@ -1280,9 +1412,6 @@ function IntelligenceTab({ documentId }: { documentId: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// History tab
-// ---------------------------------------------------------------------------
 
 function HistoryTab({ documentId, transformations }: {
   documentId: string;

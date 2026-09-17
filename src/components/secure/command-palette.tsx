@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useApp, type ViewKey } from "@/lib/store";
+import { ROUTES } from "@/lib/nav";
 import {
   CommandDialog,
   CommandEmpty,
@@ -38,7 +40,8 @@ const NAV_ITEMS: { key: ViewKey; label: string; desc: string; icon: any; keyword
 ];
 
 export function CommandPalette() {
-  const { commandOpen, setCommandOpen, setView, setHelpOpen } = useApp();
+  const { commandOpen, setCommandOpen, setHelpOpen } = useApp();
+  const router = useRouter();
   const { setTheme, theme } = useTheme();
 
   useEffect(() => {
@@ -48,8 +51,7 @@ export function CommandPalette() {
         setCommandOpen(!commandOpen);
       }
       if (e.key === "?" && !commandOpen && (e.target as HTMLElement)?.tagName !== "INPUT" && (e.target as HTMLElement)?.tagName !== "TEXTAREA") {
-        // Shift+? opens help
-        if (e.shiftKey) {
+        if (e.shiftKey) { // Shift+? opens help
           e.preventDefault();
           setHelpOpen(true);
         }
@@ -73,7 +75,7 @@ export function CommandPalette() {
                 key={item.key}
                 value={`${item.label} ${item.desc} ${item.keywords.join(" ")}`}
                 onSelect={() => {
-                  setView(item.key);
+                  router.push(ROUTES[item.key]);
                   setCommandOpen(false);
                 }}
                 className="gap-3"

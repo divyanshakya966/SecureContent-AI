@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Search, Trash2, Loader2, Inbox, Filter, ArrowUpDown } from "lucide-react";
 import { api } from "@/lib/api-client";
+import { useRouter } from "next/navigation";
 import { useApp } from "@/lib/store";
+import { documentPath } from "@/lib/nav";
 import type { DocumentRecord } from "@/types";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,16 +15,22 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ClassificationBadge, StatusBadge } from "@/components/secure/badges";
 import { riskColor, formatRelativeTime, formatBytes, truncate } from "@/lib/display";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export function DocumentsView() {
-  const { refreshKey, openDocument, bumpRefresh, setView } = useApp();
+  const { refreshKey, bumpRefresh } = useApp();
+  const router = useRouter();
+  const openDocument = (id: string) => router.push(documentPath(id));
   const [docs, setDocs] = useState<DocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [filterClass, setFilterClass] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"recent" | "risk" | "name">("recent");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -51,13 +59,46 @@ export function DocumentsView() {
     try {
       await api.deleteDocument(id);
       toast.success(`Removed "${title}"`);
+      setSelected((prev) => prev.filter((x) => x !== id));
       bumpRefresh();
     } catch (e: any) {
       toast.error("Delete failed", { description: e.message });
     }
   }
 
+  async function removeSelected() {
+    if (!selected.length || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const res = await api.bulkDeleteDocuments(selected);
+      toast.success(`Deleted ${res.deleted} document${res.deleted !== 1 ? "s" : ""}`);
+      setSelected([]);
+      setConfirmBulk(false);
+      bumpRefresh();
+    } catch (e: any) {
+      toast.error("Bulk delete failed", { description: e.message });
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  function toggleOne(id: string, checked: boolean) {
+    setSelected((prev) => (checked ? [...new Set([...prev, id])] : prev.filter((x) => x !== id)));
+  }
+
+  function toggleAllFiltered(checked: boolean) {
+    setSelected((prev) => {
+      if (!checked) return prev.filter((id) => !filtered.some((d) => d.id === id));
+      return [...new Set([...prev, ...filtered.map((d) => d.id)])];
+    });
+  }
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((d) => selected.includes(d.id));
+  const someFilteredSelected = filtered.some((d) => selected.includes(d.id));
+  const selectedDocs = docs.filter((d) => selected.includes(d.id));
+
   return (
+    <>
     <Card className="overflow-hidden">
       <div className="flex flex-col gap-3 border-b border-border bg-card p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -106,6 +147,18 @@ export function DocumentsView() {
             <Button variant="ghost" size="sm" className="h-7 text-xs rounded-md" onClick={() => { setQuery(""); setFilterClass("all"); setFilterStatus("all"); }}>Clear</Button>
           )}
         </div>
+        {selected.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2">
+            <span className="text-xs font-semibold">{selected.length} selected</span>
+            <span className="text-[11px] text-muted-foreground">Findings, transformations, and intelligence go with them.</span>
+            <div className="ml-auto flex items-center gap-1.5">
+              <Button variant="ghost" size="sm" className="h-7 text-xs rounded-md" onClick={() => setSelected([])}>Clear</Button>
+              <Button variant="destructive" size="sm" className="h-7 text-xs rounded-md gap-1.5" onClick={() => setConfirmBulk(true)}>
+                <Trash2 className="h-3.5 w-3.5" /> Delete{selected.length > 1 ? ` ${selected.length}` : ""}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -122,7 +175,7 @@ export function DocumentsView() {
               : "No documents match your filters. Adjust or clear filters to see all items."}
           </p>
           {docs.length === 0 ? (
-            <Button size="sm" className="mt-1" onClick={() => setView("upload")}>Ingest document</Button>
+            <Button size="sm" className="mt-1" onClick={() => router.push("/ingest")}>Ingest document</Button>
           ) : (
             <Button variant="outline" size="sm" className="mt-1" onClick={() => { setQuery(""); setFilterClass("all"); setFilterStatus("all"); }}>Clear filters</Button>
           )}
@@ -132,6 +185,14 @@ export function DocumentsView() {
           <Table>
             <TableHeader className="sticky top-0 bg-muted/40 backdrop-blur-md z-10 border-b">
               <TableRow className="hover:bg-transparent border-border">
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={allFilteredSelected ? true : someFilteredSelected ? "indeterminate" : false}
+                    onCheckedChange={(v) => toggleAllFiltered(v === true)}
+                    aria-label="Select all documents"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </TableHead>
                 <TableHead className="w-[42%] text-xs font-semibold tracking-wide">Document</TableHead>
                 <TableHead className="text-xs font-semibold tracking-wide">Classification</TableHead>
                 <TableHead className="text-xs font-semibold tracking-wide">Status</TableHead>
@@ -144,6 +205,13 @@ export function DocumentsView() {
             <TableBody>
               {filtered.map((d) => (
                 <TableRow key={d.id} className="cursor-pointer group hover:bg-muted/40 transition-colors" onClick={() => openDocument(d.id)}>
+                  <TableCell className="py-3" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selected.includes(d.id)}
+                      onCheckedChange={(v) => toggleOne(d.id, v === true)}
+                      aria-label={`Select ${d.title}`}
+                    />
+                  </TableCell>
                   <TableCell className="py-3">
                     <div className="font-medium leading-tight tracking-tight text-sm">{d.title}</div>
                     <div className="font-mono text-[11px] text-muted-foreground truncate max-w-[320px]">{truncate(d.filename, 48)}</div>
@@ -163,8 +231,8 @@ export function DocumentsView() {
                       <AlertDialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground/60 hover:text-destructive opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()} aria-label={`Delete ${d.title}`}><Trash2 className="h-3.5 w-3.5" /></Button>
                       </AlertDialogTrigger>
-                      <AlertDialogContent onClick={(e) => e.stopPropagation()}>
-                        <AlertDialogHeader><AlertDialogTitle>Delete document?</AlertDialogTitle><AlertDialogDescription>Remove “{d.title}” and associated findings. This cannot be undone.</AlertDialogDescription></AlertDialogHeader>
+                      <AlertDialogContent onClick={(e) => e.stopPropagation()} className="sm:max-w-md">
+                        <AlertDialogHeader><AlertDialogTitle>Delete document?</AlertDialogTitle><AlertDialogDescription>Remove <span className="font-medium text-foreground [overflow-wrap:anywhere]">“{d.title}”</span> and associated findings. This cannot be undone.</AlertDialogDescription></AlertDialogHeader>
                         <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => remove(d.id, d.title)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction></AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
@@ -174,11 +242,42 @@ export function DocumentsView() {
             </TableBody>
           </Table>
           <div className="flex items-center justify-between border-t border-border bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground">
-            <span>{filtered.length} documents · {docs.filter(d=>d.status==="TRANSFORMED").length} transformed</span>
+            <span>{filtered.length} documents · {docs.filter(d=>d.status==="TRANSFORMED").length} transformed{selected.length > 0 ? ` · ${selected.length} selected` : ""}</span>
             <span className="hidden sm:inline">Click a row to inspect · ⌘K to jump</span>
           </div>
         </div>
       )}
     </Card>
+
+    <AlertDialog open={confirmBulk} onOpenChange={setConfirmBulk}>
+      <AlertDialogContent className="sm:max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {selected.length} document{selected.length !== 1 ? "s" : ""}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Remove the selected documents and all associated findings, transformations, and intelligence. This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {selectedDocs.length > 0 && (
+          <ul className="max-h-[180px] space-y-1 overflow-auto scroll-thin rounded-lg border border-border bg-muted/30 p-2.5">
+            {selectedDocs.slice(0, 8).map((d) => (
+              <li key={d.id} className="font-mono text-[11px] leading-relaxed text-muted-foreground [overflow-wrap:anywhere] break-all" title={d.title}>
+                {d.title}
+              </li>
+            ))}
+            {selectedDocs.length > 8 && (
+              <li className="font-mono text-[11px] text-muted-foreground">+{selectedDocs.length - 8} more</li>
+            )}
+          </ul>
+        )}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={bulkBusy}>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={(e) => { e.preventDefault(); removeSelected(); }} disabled={bulkBusy} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            {bulkBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            Delete {selected.length > 1 ? `${selected.length} documents` : "document"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

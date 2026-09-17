@@ -4,16 +4,19 @@ import { scanContent, computeRisk } from "@/lib/security";
 import type { ScanConfig } from "@/types";
 import { serializeDocument, logAudit } from "@/lib/api/helpers";
 import { checkRateLimit, rateLimitKey, rateLimitHeaders } from "@/lib/validation/rateLimit";
+import { requireApiAuth } from "@/lib/auth";
 import { DocumentIdSchema, ScanConfigSchema, parseOr400 } from "@/lib/validation/schemas";
 import { buildIntelligenceReport } from "@/lib/intelligence/extractor";
 
 export const runtime = "nodejs";
 
-// POST /api/v1/documents/{id}/scan — re-run the security gateway on rawContent
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const _auth = requireApiAuth(req);
+  if (_auth) return _auth;
   const { id } = await params;
   const idCheck = parseOr400(DocumentIdSchema, id);
   if (!idCheck.ok) return NextResponse.json({ error: idCheck.error }, { status: 400 });
@@ -24,8 +27,7 @@ export async function POST(
   const doc = await db.document.findUnique({ where: { id } });
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404, headers: rateLimitHeaders(rl, 15) });
 
-  // Optional scan configuration (detector families + confidence floor).
-  // When omitted, the document's stored config is reused (default: everything on).
+  // Optional scan config; otherwise reuse the stored one.
   const body: unknown = await req.json().catch(() => ({}));
   const rawConfig = (body as { config?: unknown }).config;
   let scanConfig: ScanConfig;
@@ -46,7 +48,7 @@ export async function POST(
   const rawFindings = scanContent(doc.rawContent, scanConfig);
   const risk = computeRisk(rawFindings);
 
-  // Re-scan invalidates any prior working copy — clear the policy marker too.
+
   let scanMeta: Record<string, unknown> = {};
   try {
     scanMeta = JSON.parse(doc.metadata ?? "{}");
@@ -58,7 +60,7 @@ export async function POST(
   scanMeta.scanConfig = scanConfig;
   const scanMetadata = JSON.stringify(scanMeta);
 
-  // Atomic replacement of INPUT findings
+
   await db.$transaction(async (tx) => {
     await tx.finding.deleteMany({ where: { documentId: id, stage: "INPUT" } });
     if (rawFindings.length) {
@@ -85,7 +87,7 @@ export async function POST(
         riskBefore: risk.total,
         classification: risk.classification,
         status: "SCANNED",
-        // Reset sanitized state so caller must re-sanitize
+
         sanitizedContent: null,
         riskAfter: 0,
         metadata: scanMetadata,
@@ -142,7 +144,7 @@ export async function POST(
     where: { id },
     include: { findings: { orderBy: { createdAt: "asc" } }, transformations: true, intelligence: true },
   });
-  // fresh is non-null because we just updated; serializeDocument handles null via fallback
+
   const updatedDoc = fresh ?? (await db.document.findUnique({ where: { id }, include: { findings: true, transformations: true, intelligence: true } }));
   return NextResponse.json(
     { document: updatedDoc ? serializeDocument(updatedDoc) : null, risk },

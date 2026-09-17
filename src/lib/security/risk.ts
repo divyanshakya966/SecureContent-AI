@@ -1,5 +1,4 @@
-// SecureContent AI — Risk scoring + classification
-// Transparent, weighted risk model so reviewers can understand the score.
+// Weighted, transparent risk scoring + classification.
 
 import type { Classification, Severity } from "@/types";
 import type { RawFinding } from "./detectors";
@@ -55,8 +54,7 @@ export function computeRisk(findings: RawFinding[]): RiskBreakdown {
     internalAssets * 0.75 +
     unsafeUrls * 0.75;
 
-  // Mitigation credit — every REDACT / QUARANTINE / BLOCK action reduces the
-  // residual risk because that span will not reach the model verbatim.
+  // Mitigation credit: redacted spans will not reach the model verbatim.
   const mitigation = findings.reduce((acc, f) => {
     if (f.defaultAction === "REDACT") return acc + SEVERITY_WEIGHT[f.severity] * 0.6;
     if (f.defaultAction === "QUARANTINE") return acc + SEVERITY_WEIGHT[f.severity] * 0.8;

@@ -1,7 +1,9 @@
 "use client";
 
-import { ShieldCheck, LayoutDashboard, UploadCloud, FileStack, ScrollText, BookLock, Network, Brain, Scale, HelpCircle, Search } from "lucide-react";
+import { LayoutDashboard, UploadCloud, FileStack, ScrollText, BookLock, Network, Brain, Scale, HelpCircle, Search } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
 import { useApp, type ViewKey } from "@/lib/store";
+import { ROUTES, isDocumentsSection, viewFromPathname } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -25,7 +27,10 @@ const NAV: NavItem[] = [
 ];
 
 export function Sidebar() {
-  const { view, setView, setCommandOpen, setHelpOpen } = useApp();
+  const { setCommandOpen, setHelpOpen } = useApp();
+  const router = useRouter();
+  const pathname = usePathname();
+  const view = viewFromPathname(pathname);
 
   const groups: { id: "primary" | "analyze" | "govern"; title: string }[] = [
     { id: "primary", title: "Workspace" },
@@ -34,11 +39,9 @@ export function Sidebar() {
   ];
 
   return (
-    <aside className="hidden md:flex w-[240px] shrink-0 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
+    <aside className="hidden md:sticky md:top-0 md:flex md:h-screen w-[240px] shrink-0 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
       <div className="flex items-center gap-2.5 px-4 h-[56px] border-b border-sidebar-border shrink-0">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground shadow-sm">
-          <ShieldCheck className="h-4 w-4" />
-        </div>
+        <img src="/logo.svg" alt="SecureContent AI" className="h-7 w-7 rounded-md shadow-sm" />
         <div className="leading-none">
           <div className="text-[13px] font-semibold tracking-tight text-sidebar-foreground">SecureContent AI</div>
           <div className="text-[10px] font-medium tracking-wide text-sidebar-foreground/50">v1.0 · Local</div>
@@ -65,13 +68,13 @@ export function Sidebar() {
               </div>
               <div className="space-y-0.5">
                 {NAV.filter((n) => n.group === g.id).map((item) => {
-                  const active = view === item.key;
+                  const active = view === item.key || (item.key === "documents" && isDocumentsSection(pathname) && view === "document");
                   const Icon = item.icon;
                   return (
                     <Tooltip key={item.key}>
                       <TooltipTrigger asChild>
                         <button
-                          onClick={() => setView(item.key)}
+                          onClick={() => router.push(ROUTES[item.key])}
                           className={cn(
                             "group relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] leading-none transition-colors text-left",
                             active
@@ -85,9 +88,9 @@ export function Sidebar() {
                           <span className="hidden xl:block text-[11px] text-sidebar-foreground/35 truncate max-w-[110px]">{item.desc}</span>
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="right" className="max-w-[260px] text-xs">
-                        <div className="font-medium">{item.label}</div>
-                        <div className="text-muted-foreground">{item.desc}</div>
+                      <TooltipContent side="right" sideOffset={8} className="max-w-[260px] px-3 py-2">
+                        <div className="text-xs font-semibold leading-tight">{item.label}</div>
+                        <div className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{item.desc}</div>
                       </TooltipContent>
                     </Tooltip>
                   );
@@ -109,7 +112,7 @@ export function Sidebar() {
         </button>
         <div className="rounded-md border border-sidebar-border bg-sidebar-accent/30 px-3 py-2.5">
           <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 motion-safe:animate-pulse" />
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--risk-safe)] motion-safe:animate-pulse" />
             System operational
           </div>
           <div className="mt-1 text-xs font-medium text-sidebar-foreground/75">Scan → Sanitize → Validate</div>

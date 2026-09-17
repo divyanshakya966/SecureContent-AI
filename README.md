@@ -68,7 +68,7 @@ GROQ_MODEL="openai/gpt-oss-120b"
 # MAX_TRANSFORM_CHARS="90000"  # truncate before LLM to avoid context_length_exceeded
 # optional OCR (Docling worker is preferred; local tesseract is opt-in)
 # DOCLING_WORKER_URL="http://localhost:8001/parse"
-# ENABLE_LOCAL_OCR="false"  # set "true" to enable local tesseract.js (slow, for demo only)
+# ENABLE_LOCAL_OCR="false"  # set "true" to enable local tesseract.js (slow; prefer Docling worker)
 ```
 
 > Keys are server-only (`src/lib/ai/transform.ts` runtime guard). Without keys the app uses a deterministic offline mock that still exercises DLP/grounding.
@@ -84,7 +84,7 @@ curl -X POST http://localhost:3000/api/v1/seed
 **4) Verify (local CI)**
 
 ```bash
-bun run verify   # lint + typecheck + vitest (64 tests) + next build
+bun run verify   # lint + typecheck + vitest + next build
 bun run benchmark
 ```
 
@@ -147,30 +147,13 @@ bun run build
 NODE_ENV=production DATABASE_URL="file:./prisma/dev.db" node .next/standalone/server.js
 ```
 
-**Ingest quality (no obscure output):** fixed in `src/lib/parsers.ts` + `src/lib/text.ts` + `src/lib/ocr.ts` + `mini-services/docling-worker/app.py` — every extraction is scored (`printableRatio`, `spaceRatio`, `garbledRatio`, `dictionaryRatio`). Garbage (hex, CID, `PJYI~`, `�` boxes) is discarded and never stored. PDF uses `pdf-parse`+quality gate; scanned PDFs auto-try Docling `pymupdf+pytesseract`/`pdfminer`; PPTX extracted locally via `jszip` (`<a:t>` nodes) + `python-pptx`; Images OCR locally via `tesseract.js`+`sharp` (grayscale/normalize/upscale) or Docling `Pillow+pytesseract`; SVG extracts `<text>` nodes. All outputs NFC-normalized, control/zero-width stripped, `[overflow-wrap:anywhere]` safe. If truly no text, UI shows clean metadata placeholder (`[Image: file — PNG 800x600]` or `No extractable text — enable OCR`) instead of obscure characters.
+**Ingest quality (no obscure output):** every extraction is quality-scored and garbled output (hex, CID, `PJYI~`, `�` boxes) is discarded, never stored — see the source table below and `docs/ingestion.md` for the per-format chain (local parsers + optional Docling OCR).
 
 **Verify cloud:** `curl http://<host>/api/v1/stats` should return `stats.totalDocuments`.
 
 ## Configuration
 
-Copy `.env.example` to `.env`:
-
-```env
-# Database
-DATABASE_URL="file:./dev.db"
-
-# LLM — server-side only (never expose to client or commit)
-GEMINI_API_KEY=""              # primary — Google AI Studio: https://aistudio.google.com/apikey
-GROQ_API_KEY=""                # fallback — Groq console: https://console.groq.com/keys (model: openai/gpt-oss-120b)
-GEMINI_MODEL="gemini-3.6-flash"
-GROQ_MODEL="openai/gpt-oss-120b"
-# GEMINI_FALLBACK_MODELS="gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-pro-preview"  # rollback chain (2.5-* is 404 for new users)
-# GROQ_FALLBACK_MODELS="openai/gpt-oss-120b,openai/gpt-oss-20b,llama-3.3-70b-versatile,llama-3.1-8b-instant"
-
-# Optional
-DOCLING_WORKER_URL=""          # optional: http://localhost:8001/parse
-# ENABLE_LOCAL_OCR="false"     # set "true" to enable local tesseract.js for images (disabled by default for speed; prefer Docling worker)
-```
+Copy `.env.example` to `.env` — same variables as the quickstart block above (plus `DOCLING_WORKER_URL` / `ENABLE_LOCAL_OCR` for OCR, below).
 
 > **Security:** `GEMINI_API_KEY` / `GROQ_API_KEY` are read **only** on the server
 > (`src/lib/ai/transform.ts`, `import "server-only"`). Architecture is
@@ -189,6 +172,20 @@ DOCLING_WORKER_URL=""          # optional: http://localhost:8001/parse
 | **Video/Audio** — MP4/MOV/WebM/MP3/WAV | Metadata placeholder; paste transcript or run Whisper worker; then transform transcript |
 
 Generation is **always** `sanitized working copy → LLM inside `<UNTRUSTED_DOCUMENT>` envelope → output sanitizer → DLP rescan → grounding`.
+
+### Enhanced OCR — Docling worker (optional)
+
+For best quality on scanned PDFs, complex layouts, and photo scans (Docker setups can use `docker compose --profile docling up` instead):
+
+```bash
+cd mini-services/docling-worker
+python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements.txt pymupdf pillow pytesseract
+# OS-level OCR engine: sudo dnf install tesseract tesseract-langpack-eng  (or: sudo apt install tesseract-ocr)
+uvicorn app:app --host 127.0.0.1 --port 8001
+```
+
+Then set `DOCLING_WORKER_URL=http://localhost:8001/parse` in `.env`, restart the app, and re-upload — files are proxied to the worker first (20s timeout, SSRF-guarded) with automatic fallback to local parsers. Details: `mini-services/docling-worker/README.md`.
 
 ## Policies
 
@@ -223,6 +220,7 @@ After scanning, reviewers can overrule any finding's action (keep / mask / redac
 
 ```
 POST   /api/v1/documents                    # file (multipart) | { sampleId } | { title, content }
+POST   /api/v1/documents/bulk-delete        # { ids[] (1–100) } → { deleted, ids } (unknown ids ignored)
 GET    /api/v1/documents                    # ?status=&take=&skip=
 GET    /api/v1/documents/:id
 DELETE /api/v1/documents/:id
@@ -233,6 +231,8 @@ GET    /api/v1/documents/:id/security-report
 GET    /api/v1/documents/:id/history
 GET    /api/v1/documents/:id/intelligence   # GET (cached) | POST (force refresh)
 POST   /api/v1/documents/:id/policy-compare # { profiles[] (1..10, built-ins + customs), outputType }
+POST   /api/v1/documents/:id/pipeline      # auto sanitize→transform→validate (SSE stages); { policy, outputType | outputTypes[] (1..8), findingActions[]?, tone, language, detailLevel, objective, style }
+POST   /api/v1/documents/batch              # bulk: files[] (1–20, 100 MB) + { policy, outputTypes[]?, runPipeline?, skipDuplicates?, stopOnError?, concurrency? } → per-file results + summary
 GET    /api/v1/stats
 GET    /api/v1/audit                        # ?take=
 GET    /api/v1/policies                     # GET list | POST create
@@ -253,14 +253,15 @@ Details: `docs/api.md`
 
 ```
 src/
+  app/(app)/               # Routed pages: overview, ingest, documents, intelligence, policy-lab, policies, audit, architecture
   app/api/v1/              # Route handlers
-  lib/security/            # Detectors, risk, sanitize, DLP, policies
-  lib/parsers.ts           # Ingestion
-  lib/ai/transform.ts      # LLM adapter
+  lib/security/            # Detectors, risk, sanitize, DLP, policies (+ framework templates)
+  lib/parsers.ts           # Ingestion (+ lib/ingest.ts shared routine, lib/ocr.ts)
+  lib/ai/transform.ts      # LLM adapter (+ lib/pipeline-run.ts shared auto-pipeline)
   components/secure/       # UI
   types/
 prisma/schema.prisma       # SQLite model
-mini-services/docling-worker/
+mini-services/docling-worker/  # Optional OCR microservice
 tests/                     # unit / integration / security
 ```
 
@@ -278,13 +279,15 @@ CI runs on every push/PR via `.github/workflows/ci.yml`; security scans via `sec
 
 ## Security
 
-- Parser isolation, size/MIME validation, SSRF guards
+- Parser isolation, size/MIME validation, SSRF allowlist (loopback/RFC1918/service-names only)
 - Pre-LLM scan + post-LLM DLP (double gate) with deterministic repair
 - Policy-enforced sanitization — built-in + custom profiles (allow / mask / remove / block), per-finding reviewer overrides, injection quarantine no policy or override can lift
+- Optional bearer auth: set `API_AUTH_TOKEN` (≥16 chars) to lock all `POST/PUT/DELETE` under `/api/v1/*` (token entry in the topbar, `REQUIRE_AUTH_FOR_READS=true` also locks `GET`s); `/api/v1/seed` additionally gated by `ALLOW_SEED` in production
 - Audit log for every state transition (upload, scan, sanitize, transform, release)
 - Security headers: CSP, HSTS, X-Frame-Options, etc. (next.config + proxy + Caddy)
-- Rate limiting per IP/route (in-memory; swap to Redis in production)
-- See `docs/threat-model.md` and `docs/architecture.md`
+- Rate limiting per IP/route plus a global backstop (in-memory; swap to Redis in production)
+- Containers: read-only FS, no-new-privileges, dropped caps, pinned images, Trivy-gated CI
+- See `SECURITY.md`, `docs/threat-model.md`, `docs/architecture.md`, and `docs/cloud.md` (cloud runbook)
 
 ## References
 

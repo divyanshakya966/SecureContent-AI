@@ -7,11 +7,11 @@ import type { DashboardStats } from "@/types";
 export const runtime = "nodejs";
 
 const CATEGORY_COLOR: Record<string, string> = {
-  PII: "oklch(0.6 0.13 162)",
-  SECRET: "oklch(0.62 0.21 27)",
-  PROMPT_INJECTION: "oklch(0.62 0.18 305)",
-  INTERNAL_ASSET: "oklch(0.7 0.16 70)",
-  UNSAFE_URL: "oklch(0.55 0.05 250)",
+  PII: "var(--chart-1)",
+  SECRET: "var(--chart-3)",
+  PROMPT_INJECTION: "var(--chart-5)",
+  INTERNAL_ASSET: "var(--chart-2)",
+  UNSAFE_URL: "var(--chart-4)",
 };
 
 export async function GET(req: NextRequest) {
@@ -65,8 +65,7 @@ export async function GET(req: NextRequest) {
 
   const releasedTransformations = await db.transformation.count({ where: { outputDlp: "PASS" } });
 
-  // Include fully-cleaned docs (riskAfter = 0) — the old `gt: 0` filter dropped
-  // exactly the best results (e.g. 7 → 0) from the average.
+  // Include fully-cleaned docs; a `gt: 0` filter would drop the best results.
   const reducedDocs = await db.document.findMany({
     where: { status: { in: ["SANITIZED", "TRANSFORMED"] } },
     select: { riskBefore: true, riskAfter: true },
@@ -89,8 +88,7 @@ export async function GET(req: NextRequest) {
     count: c._count,
   }));
 
-  // For docs not yet sanitized (SCANNED), riskAfter is still the 0 placeholder —
-  // show after = before so the chart doesn't fake a full reduction.
+  // Pre-sanitize docs show after = before (riskAfter is still a placeholder).
   const riskTrend = docsForTrend
     .slice()
     .reverse()

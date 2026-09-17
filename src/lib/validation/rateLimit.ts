@@ -1,7 +1,4 @@
-// In-memory token bucket rate limiter (per-IP, per-route).
-// Production deployments should replace this with a distributed store (Redis / Upstash)
-// and enable trust-proxy validation at the edge. The interface is intentionally
-// compatible so the swap is a one-line change.
+// In-memory token-bucket limiter (per-IP, per-route). Swap for Redis in production.
 
 type Bucket = { count: number; resetAt: number };
 
@@ -12,12 +9,12 @@ const MAX_BUCKETS = 10_000;
 
 function evictIfNeeded(now: number): void {
   if (buckets.size < MAX_BUCKETS) return;
-  // First drop expired buckets…
+
   for (const [k, v] of buckets.entries()) {
     if (now > v.resetAt) buckets.delete(k);
     if (buckets.size < MAX_BUCKETS) return;
   }
-  // …then oldest-inserted (Map preserves insertion order).
+
   for (const k of buckets.keys()) {
     buckets.delete(k);
     if (buckets.size < MAX_BUCKETS) return;
@@ -47,15 +44,20 @@ export function checkRateLimit(key: string, opts: RateLimitOpts = {}): { allowed
 }
 
 export function rateLimitKey(req: Request, route: string): string {
-  // Prefer x-real-ip (set by Caddy / trusted proxy) over x-forwarded-for which
-  // is client-controllable. In this single-tenant demo we treat either as a hint
-  // and rate-limit permissively; a production IdP would key by tenant + user.
+  // Prefer x-real-ip (set/overwritten by Caddy in compose) over client-controllable x-forwarded-for.
+  // Direct-to-app clients can spoof these headers, so callers should ALSO enforce a
+  // global per-route bucket via checkGlobalRateLimit (below) as a spoof-proof backstop.
   const xRealIp = req.headers.get("x-real-ip")?.split(",")[0]?.trim();
   const xForwardedFor = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   const ip = xRealIp || xForwardedFor || "unknown";
-  // Basic sanity: if the IP looks spoofed (too long / not IP-like), treat as unknown.
+  // Treat spoofed-looking IPs as unknown.
   const normalized = ip.length > 45 || /[^\d.:a-fA-F]/.test(ip.replace(/,/g, "")) ? "unknown" : ip;
   return `${route}:${normalized}`;
+}
+
+/** Global (IP-independent) bucket — backstop against header-spoofed bypass. */
+export function checkGlobalRateLimit(route: string, opts: RateLimitOpts = {}): { allowed: boolean; remaining: number; resetMs: number } {
+  return checkRateLimit(`GLOBAL:${route}`, opts);
 }
 
 export function rateLimitHeaders(result: { allowed: boolean; remaining: number; resetMs: number }, max: number): Record<string, string> {
@@ -72,7 +74,7 @@ export function _resetRateLimitBuckets(): void {
   buckets.clear();
 }
 
-// Periodically clean up expired buckets
+
 if (typeof setInterval !== "undefined") {
   setInterval(() => {
     const now = Date.now();
