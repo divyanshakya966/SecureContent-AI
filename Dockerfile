@@ -2,7 +2,7 @@
 # Works on Fedora/Windows (Docker Desktop/WSL) without heavy resources.
 # Multi-stage: deps -> builder -> runner. SQLite lives in /app/db (volume).
 
-FROM oven/bun:1.3 AS base
+FROM oven/bun:1.4.2 AS base
 WORKDIR /app
 
 # ---- deps ----
@@ -32,10 +32,12 @@ ENV PORT=3000
 # Use non-root user for defense in depth
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
-# Install bun for prisma CLI in runner (lightweight) + wget for healthcheck
-RUN apt-get update && apt-get install -y --no-install-recommends wget ca-certificates \
-  && rm -rf /var/lib/apt/lists/* \
-  && npm i -g bun
+# Patch OS packages (picks up fixed Debian packages) and keep only the
+# minimal runtime set: ca-certificates for TLS. No wget/bun in the runner —
+# healthchecks use node fetch and the DB preflight uses npx with the copied
+# local prisma, so fewer packages means fewer scan findings.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # Only production artifacts
 COPY --from=builder /app/.next/standalone ./
@@ -60,7 +62,7 @@ USER appuser
 
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO- http://localhost:3000/api/v1/stats || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://localhost:3000/api/v1/stats').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
 # Preflight: ensure DB exists and push schema, then start Node server
 # For Postgres use DATABASE_URL=postgresql://... and run `npx prisma migrate deploy` instead of db push.
