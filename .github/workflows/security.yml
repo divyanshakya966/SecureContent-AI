@@ -68,7 +68,9 @@ jobs:
 
       - name: No NEXT_PUBLIC secrets
         run: |
-          if grep -rn "NEXT_PUBLIC_.*KEY\|NEXT_PUBLIC_.*SECRET\|NEXT_PUBLIC_.*TOKEN" src --include="*.ts" --include="*.tsx" | grep -v "API token" | head -n 5; then
+          hits=$(grep -rn "NEXT_PUBLIC_.*KEY\|NEXT_PUBLIC_.*SECRET\|NEXT_PUBLIC_.*TOKEN" src --include="*.ts" --include="*.tsx" | grep -v "API token" || true)
+          if [ -n "$hits" ]; then
+            echo "$hits"
             echo "::error::Potential NEXT_PUBLIC secret exposure in src/."
             exit 1
           fi
@@ -87,7 +89,7 @@ jobs:
         run: docker build -t securecontent-ai:test .
 
       - name: Trivy — container + fs scan (fail on CRITICAL)
-        uses: aquasecurity/trivy-action@0.32.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: securecontent-ai:test
           format: sarif

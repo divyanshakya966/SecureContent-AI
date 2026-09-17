@@ -69,7 +69,9 @@ jobs:
         run: |
           # Env *names* (process.env.GEMINI_API_KEY) legitimately appear in server chunks;
           # fail only on *values*: Groq live keys (gsk_), Google AI keys (AIza), OpenAI (sk-).
-          if grep -rE "gsk_[A-Za-z0-9]{10,}|AIza[0-9A-Za-z_-]{20,}|sk-(live|proj)-[A-Za-z0-9]{10,}" .next --include="*.js" 2>/dev/null | grep -v ".next/cache" | head -n 5; then
+          hits=$(grep -rE "gsk_[A-Za-z0-9]{10,}|AIza[0-9A-Za-z_-]{20,}|sk-(live|proj)-[A-Za-z0-9]{10,}" .next --include="*.js" 2>/dev/null | grep -v ".next/cache" || true)
+          if [ -n "$hits" ]; then
+            echo "$hits" | head -n 5
             echo "::error::Potential secret value found in build output — review."
             exit 1
           fi
