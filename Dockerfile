@@ -23,7 +23,7 @@ ENV DATABASE_URL="file:./prisma/dev.db"
 RUN bun run build
 
 # ---- runner ----
-FROM node:22.19-slim AS runner
+FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
@@ -34,10 +34,12 @@ RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
 # Patch OS packages (picks up fixed Debian packages) and keep only the
 # minimal runtime set: ca-certificates for TLS. No wget/bun in the runner —
-# healthchecks use node fetch and the DB preflight uses npx with the copied
-# local prisma, so fewer packages means fewer scan findings.
+# healthchecks use node fetch and the DB preflight invokes the copied local
+# Prisma CLI directly with node, so fewer packages means fewer scan findings.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 # Only production artifacts
 COPY --from=builder /app/.next/standalone ./
@@ -65,6 +67,7 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://localhost:3000/api/v1/stats').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
 # Preflight: ensure DB exists and push schema, then start Node server
-# For Postgres use DATABASE_URL=postgresql://... and run `npx prisma migrate deploy` instead of db push.
-# standalone was copied to /app (server.js at /app/server.js), use npx for prisma to avoid bunx resolution issues
-CMD ["sh", "-c", "mkdir -p /app/db /app/prisma && if echo \"$DATABASE_URL\" | grep -q \"^postgresql://\\|^postgres://\"; then echo \"[preflight] Postgres detected — running prisma migrate deploy\" && DATABASE_URL=${DATABASE_URL} npx prisma migrate deploy 2>&1 || DATABASE_URL=${DATABASE_URL} npx prisma db push --accept-data-loss 2>&1 || true; else DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} npx prisma db push --accept-data-loss 2>&1 || true; fi; echo \"[preflight] DB ready — starting server\"; DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} node server.js"]
+# For Postgres use DATABASE_URL=postgresql://... and run `node ./node_modules/prisma/build/index.js migrate deploy` instead of db push.
+# standalone was copied to /app (server.js at /app/server.js); Prisma CLI is invoked
+# directly via node (npm/npx were removed from this image).
+CMD ["sh", "-c", "mkdir -p /app/db /app/prisma && if echo \"$DATABASE_URL\" | grep -q \"^postgresql://\\|^postgres://\"; then echo \"[preflight] Postgres detected — running prisma migrate deploy\" && DATABASE_URL=${DATABASE_URL} node ./node_modules/prisma/build/index.js migrate deploy 2>&1 || DATABASE_URL=${DATABASE_URL} node ./node_modules/prisma/build/index.js db push --accept-data-loss 2>&1 || true; else DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} node ./node_modules/prisma/build/index.js db push --accept-data-loss 2>&1 || true; fi; echo \"[preflight] DB ready — starting server\"; DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db} node server.js"]
